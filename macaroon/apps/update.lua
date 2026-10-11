@@ -3,6 +3,7 @@
 -- State lives in file-scope upvalues (fresh per window via dofile).
 
 local status = "Press Check."
+local detail = ""
 local localVer = "?"
 local remoteVer = "?"
 local updateAvailable = false
@@ -23,6 +24,7 @@ local function doCheck()
   if busy then return end
   busy = true
   status = "Checking..."
+  detail = ""
   if not fs.exists("macaroon/updater.lua") then
     status = "Updater missing."
     busy = false
@@ -35,8 +37,15 @@ local function doCheck()
     return
   end
   local ok, info = pcall(Updater.check)
-  if not ok or type(info) ~= "table" then
-    status = "Check crashed."
+  if not ok then
+    status = "CRASH"
+    detail = tostring(info):sub(1, 26)
+    busy = false
+    return
+  end
+  if type(info) ~= "table" then
+    status = "CRASH"
+    detail = "bad check result"
     busy = false
     return
   end
@@ -53,7 +62,8 @@ local function doCheck()
   else
     remoteVer = "?"
     updateAvailable = false
-    status = "Check failed: " .. tostring(info.err or "?"):sub(1, 18)
+    status = "Check failed"
+    detail = tostring(info.err or "?"):sub(1, 26)
   end
   busy = false
 end
@@ -73,8 +83,10 @@ local function doInstall()
     refreshLocals()
     updateAvailable = false
     status = "Done! Reboot soon."
+    detail = ""
   else
-    status = "Failed: " .. tostring(err or "?"):sub(1, 18)
+    status = "Install failed"
+    detail = tostring(err or "?"):sub(1, 26)
   end
   busy = false
 end
@@ -99,6 +111,10 @@ return {
       win.setTextColor(colours.grey)
     end
     win.write(tostring(status))
+    win.setCursorPos(2, 4)
+    win.setTextColor(colours.red)
+    win.write(string.sub(tostring(detail), 1, 26))
+    win.setTextColor(colours.black)
 
     -- Check button row 5
     win.setCursorPos(2, 5)

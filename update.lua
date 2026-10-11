@@ -25,9 +25,9 @@ if not okU or type(Updater) ~= "table" then
 end
 
 print("Macaroon OS update check...")
-local ok, info = Updater.check()
-if not ok or type(info) ~= "table" then
-  printErr("Check failed.")
+local okCall, info = pcall(Updater.check)
+if not okCall or type(info) ~= "table" then
+  printErr("Check crashed: " .. tostring(info))
   return
 end
 
@@ -53,9 +53,13 @@ if ans and string.lower(string.sub(ans, 1, 1)) == "n" then
 end
 
 print("Updating...")
-local okP, err = Updater.perform(info.baseURL, function(path, i, total)
+local okCall, okP, err = pcall(Updater.perform, info.baseURL, function(path, i, total)
   print("[" .. i .. "/" .. total .. "] " .. path)
 end)
+if not okCall then
+  printErr("Update crashed: " .. tostring(okP))
+  return
+end
 if not okP then
   printErr("Update failed: " .. tostring(err))
   return

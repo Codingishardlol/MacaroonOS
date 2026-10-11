@@ -64,9 +64,26 @@ do
     if not okU or type(Updater) ~= "table" then return end
     print("Checking for updates...")
     local ok, info = pcall(Updater.check)
-    if not ok or type(info) ~= "table" then return end
+    if not ok then
+      print("Update check crashed: " .. tostring(info))
+      print("Continuing boot in 3s...")
+      sleep(3)
+      return
+    end
+    if type(info) ~= "table" then
+      print("Update check broken. Continuing in 3s...")
+      sleep(3)
+      return
+    end
+    if info.err and not info.remoteVer then
+      print("Update check failed: " .. tostring(info.err))
+      print("Continuing boot in 3s...")
+      sleep(3)
+      return
+    end
     if not info.updateAvailable then
       print("Macaroon OS v" .. tostring(info.localVer) .. " (up to date)")
+      sleep(1)
       return
     end
     print("Update available: " .. tostring(info.localVer) .. " -> " .. tostring(info.remoteVer))
@@ -78,13 +95,19 @@ do
       return
     end
     print("Updating...")
-    local okP, err = Updater.perform(info.baseURL, function(path, i, total)
+    local okCall, okP, perr = pcall(Updater.perform, info.baseURL, function(path, i, total)
       print("[" .. i .. "/" .. total .. "] " .. path)
     end)
+    if not okCall then
+      print("Update crashed: " .. tostring(okP))
+      print("Continuing boot in 3s...")
+      sleep(3)
+      return
+    end
     if not okP then
-      print("Update failed: " .. tostring(err))
-      print("Continuing boot in 2s...")
-      sleep(2)
+      print("Update failed: " .. tostring(perr))
+      print("Continuing boot in 3s...")
+      sleep(3)
       return
     end
     print("Updated. Rebooting...")

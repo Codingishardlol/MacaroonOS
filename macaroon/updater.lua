@@ -73,6 +73,23 @@ local function splitVer(v)
   return parts
 end
 
+-- http.get should return nil+err on failure, but some environments
+-- throw instead (blocked host, no adapter, emulator quirks).
+-- Never let that propagate: check() must never crash.
+local function safeGet(url)
+  if not http or not http.get then
+    return nil, "HTTP disabled"
+  end
+  local ok, a, b = pcall(http.get, url)
+  if not ok then
+    return nil, "http error: " .. tostring(a)
+  end
+  if a == nil then
+    return nil, tostring(b or "http failed")
+  end
+  return a
+end
+
 -- Returns -1 if a<b, 0 if equal, 1 if a>b
 function Updater.compare(a, b)
   local pa = splitVer(a)
@@ -93,9 +110,9 @@ function Updater.getRemoteVersion(baseURL)
     return nil, "HTTP disabled"
   end
   local url = baseURL .. "/" .. VERSION_PATH
-  local res, err = http.get(url)
+  local res, err = safeGet(url)
   if not res then
-    return nil, tostring(err or "http failed")
+    return nil, err
   end
   local src = res.readAll()
   res.close()
@@ -106,20 +123,21 @@ function Updater.getRemoteVersion(baseURL)
   return v
 end
 
--- check() never throws: returns ok, info
--- info = { localVer, remoteVer, updateAvailable, err, baseURL }
+-- check() returns a single info table, never throws:
+-- { localVer, remoteVer, updateAvailable, err, baseURL }.
+-- Single value (not ok,info) so pcall(Updater.check) unpacks cleanly.
 function Updater.check(baseURL)
   baseURL = baseURL or Updater.getBaseURL()
   local localVer = Updater.getLocalVersion()
   if not http then
-    return true, { localVer = localVer, remoteVer = nil, updateAvailable = false, err = "HTTP disabled", baseURL = baseURL }
+    return { localVer = localVer, remoteVer = nil, updateAvailable = false, err = "HTTP disabled", baseURL = baseURL }
   end
   local remoteVer, err = Updater.getRemoteVersion(baseURL)
   if not remoteVer then
-    return true, { localVer = localVer, remoteVer = nil, updateAvailable = false, err = err, baseURL = baseURL }
+    return { localVer = localVer, remoteVer = nil, updateAvailable = false, err = err, baseURL = baseURL }
   end
   local cmp = Updater.compare(localVer, remoteVer)
-  return true, { localVer = localVer, remoteVer = remoteVer, updateAvailable = cmp < 0, err = nil, baseURL = baseURL }
+  return { localVer = localVer, remoteVer = remoteVer, updateAvailable = cmp < 0, err = nil, baseURL = baseURL }
 end
 
 local function loadManifestFromSource(src)
@@ -135,7 +153,7 @@ function Updater.getFileList(baseURL)
   -- Prefer remote manifest so new files are picked up.
   baseURL = baseURL or Updater.getBaseURL()
   if http then
-    local res = http.get(baseURL .. "/" .. MANIFEST_PATH)
+    local res = safeGet(baseURL .. "/" .. MANIFEST_PATH)
     if res then
       local src = res.readAll()
       res.close()
@@ -167,7 +185,7 @@ function Updater.perform(baseURL, onProgress)
       pcall(onProgress, path, i, #list)
     end
     local url = baseURL .. "/" .. path
-    local res, err = http.get(url)
+    local res, err = safeGet(url)
     if not res then
       return false, "FAILED " .. path .. ": " .. tostring(err)
     end
