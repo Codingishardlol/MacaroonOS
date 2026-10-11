@@ -34,6 +34,9 @@ if not okD or type(Desktop) ~= "table" or type(Desktop.run) ~= "function" then
 end
 
 local apps = {
+  { name = "Files", path = "macaroon/apps/files.lua" },
+  { name = "Terminal", path = "macaroon/apps/terminal.lua" },
+  { name = "Settings", path = "macaroon/apps/settings.lua" },
   { name = "Hello", path = "macaroon/apps/hello.lua" },
   { name = "About", path = "macaroon/apps/about.lua" },
   { name = "Update", path = "macaroon/apps/update.lua" },
@@ -93,7 +96,63 @@ do
   term.clear()
 end
 
-local ok, err = pcall(Desktop.run, Window, validApps)
+-- Secure boot: login gate. Skipped when no accounts exist
+-- (fresh manual copy), so the OS still boots out of the box.
+local sessionUser = nil
+do
+  local function bootLogin()
+    if not fs.exists("macaroon/login.lua") then return end
+    local hasAccts = false
+    if fs.exists("macaroon/users.lua") then
+      local okU, UL = pcall(dofile, "macaroon/users.lua")
+      if okU and UL and UL.hasAccounts then
+        local okH, has = pcall(UL.hasAccounts)
+        hasAccts = okH and has
+      end
+    end
+    if not hasAccts then return end
+    local okL, Login = pcall(dofile, "macaroon/login.lua")
+    if not okL or type(Login) ~= "table" then return end
+    local who, reason = Login.run()
+    if who then
+      sessionUser = who
+      return
+    end
+    if reason == "shutdown" then
+      os.shutdown()
+      return
+    end
+    print("Too many attempts. Shutting down.")
+    sleep(1)
+    os.shutdown()
+  end
+  pcall(bootLogin)
+  -- Terminate-trap: Ctrl+T during login throws through read(), and the
+  -- pcall above swallows it. Never continue to desktop unauthenticated
+  -- when accounts exist.
+  if sessionUser == nil then
+    local locked = false
+    if fs.exists("macaroon/users.lua") then
+      local okU, UL = pcall(dofile, "macaroon/users.lua")
+      if okU and UL and UL.hasAccounts then
+        local okH, has = pcall(UL.hasAccounts)
+        locked = okH and has
+      end
+    end
+    if locked then
+      term.setBackgroundColor(colours.black)
+      term.setTextColor(colours.red)
+      term.clear()
+      term.setCursorPos(1, 1)
+      print("Login required. Shutting down.")
+      sleep(1)
+      os.shutdown()
+      return
+    end
+  end
+end
+
+local ok, err = pcall(Desktop.run, Window, validApps, { user = sessionUser })
 if not ok then
   fail(tostring(err))
 end

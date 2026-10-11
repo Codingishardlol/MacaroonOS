@@ -13,17 +13,27 @@
 local BASE_URL = "https://raw.githubusercontent.com/Codingishardlol/MacaroonOS/main"
 
 -- Paths relative to both BASE_URL and the computer root.
+-- NOTE: keep in sync with macaroon/manifest.lua. Data files
+-- (users.dat, settings.dat, update_url.txt) are never listed,
+-- so installs/updates never wipe accounts or settings.
 local FILES = {
   "startup.lua",
   "update.lua",
   "macaroon/version.lua",
   "macaroon/manifest.lua",
   "macaroon/updater.lua",
+  "macaroon/sha256.lua",
+  "macaroon/settings.lua",
+  "macaroon/users.lua",
+  "macaroon/login.lua",
   "macaroon/window.lua",
   "macaroon/desktop.lua",
   "macaroon/apps/hello.lua",
   "macaroon/apps/about.lua",
   "macaroon/apps/update.lua",
+  "macaroon/apps/files.lua",
+  "macaroon/apps/settings.lua",
+  "macaroon/apps/terminal.lua",
 }
 
 local function printErr(msg)
@@ -114,6 +124,48 @@ do
     h.write(BASE_URL)
     h.close()
     print("Update source saved.")
+  end
+end
+
+-- Settings defaults (never overwrite existing).
+if not fs.exists("macaroon/settings.dat") and fs.exists("macaroon/settings.lua") then
+  local okS, Settings = pcall(dofile, "macaroon/settings.lua")
+  if okS and Settings then
+    pcall(Settings.save, nil)
+  end
+end
+
+-- Account creation (proper install). Existing accounts are kept.
+if fs.exists("macaroon/users.lua") then
+  local okU, UserLib = pcall(dofile, "macaroon/users.lua")
+  if okU and UserLib then
+    pcall(math.randomseed, (os.epoch and os.epoch("utc") or os.time() * 1000)
+      + (os.getComputerID and os.getComputerID() or 0))
+    local names = UserLib.list()
+    if #names > 0 then
+      print("Accounts kept: " .. table.concat(names, ", "))
+    else
+      print("")
+      print("Create admin account:")
+      write("Username: ")
+      local name = read()
+      name = string.gsub(name or "", "^%s*(.-)%s*$", "%1")
+      write("Password (min 8): ")
+      local pw1 = read("*")
+      write("Repeat password: ")
+      local pw2 = read("*")
+      if (pw1 or "") ~= (pw2 or "") then
+        print("Passwords differ - no account created.")
+        print("Run installer again or add one later.")
+      else
+        local okC, err = UserLib.create(name, pw1 or "")
+        if okC then
+          print("Account '" .. name .. "' created.")
+        else
+          print("Account failed: " .. tostring(err))
+        end
+      end
+    end
   end
 end
 print("")

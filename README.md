@@ -1,4 +1,4 @@
-# Macaroon OS — v1.1 (LevelOS-style desktop + updater)
+# Macaroon OS — v1.2 (desktop + updater + accounts)
 
 Target: **Advanced Computer** (colour + mouse) on CC: Tweaked.
 Tested workflow: CraftOS-PC / CC emulator on Windows.
@@ -11,13 +11,21 @@ Macaroon OS/
   update.lua      <- on-computer updater (`update` in shell)
   startup.lua     <- auto-boots + boot-time update check
   macaroon/
-    version.lua   <- bump this each release (now 1.1.0)
+    version.lua   <- bump this each release (now 1.2.0)
     manifest.lua  <- file list (installer + updater use it)
     updater.lua   <- check/perform API
+    sha256.lua    <- pure-Lua SHA256 for password hashes
+    settings.lua  <- wallpaper/clock/autoupdate store
+    users.lua     <- salted-hash accounts (users.dat)
+    login.lua     <- secure-boot login gate
     window.lua
     desktop.lua
     update_url.txt (created on install, not in repo)
+    settings.dat, users.dat (created on device, never in repo)
     apps/
+      files.lua     <- Start menu -> Files
+      terminal.lua  <- Start menu -> Terminal
+      settings.lua  <- Start menu -> Settings
       hello.lua
       about.lua
       update.lua  <- Start menu -> Update GUI
@@ -68,13 +76,35 @@ The installer saves the repo URL to `macaroon/update_url.txt`, so later checks k
    - `/macaroon/version.lua`
    - `/macaroon/manifest.lua`
    - `/macaroon/updater.lua`
+   - `/macaroon/sha256.lua`
+   - `/macaroon/settings.lua`
+   - `/macaroon/users.lua`
+   - `/macaroon/login.lua`
    - `/macaroon/window.lua`
    - `/macaroon/desktop.lua`
+   - `/macaroon/apps/files.lua`
+   - `/macaroon/apps/terminal.lua`
+   - `/macaroon/apps/settings.lua`
    - `/macaroon/apps/hello.lua`
    - `/macaroon/apps/about.lua`
    - `/macaroon/apps/update.lua`
 4. Easiest way in CraftOS-PC: drag-drop files into the computer window, or paste the folder contents into the CraftOS-PC data directory for that computer ID.
 5. Reboot the computer (hold Ctrl+R in CraftOS-PC, or `reboot`). `startup.lua` auto-runs.
+
+## Accounts + secure boot
+
+The installer asks you to create an admin account (username + password, min 8 chars). Passwords are stored salted + SHA256-hashed x100 rounds in `macaroon/users.dat` — never plaintext, and `users.dat` is never overwritten by updates. Expect a few seconds of "working" at login on real hardware; tune `ROUNDS` in `users.lua` if needed.
+
+Every boot with accounts present shows the login gate (pick user, masked password, 5 tries, `shutdown` to power off). No accounts = boots straight in, so manual copies still work. Ctrl+T cannot bypass it (terminate is trapped at login and in the desktop); file access still can — anyone who can open the computer's folder can delete `users.dat`, so this stops walk-ups, not owners.
+
+Start menu -> `Lock` reboots back to login. Your name shows in the taskbar and wallpaper.
+
+## Apps (v1.2)
+
+- **Files:** click to select, second click / `[Open]` enters dirs or views text (8KB max), `[Del]` twice deletes, `+Dir` makes folders, `[..]` goes up, scroll works.
+- **Terminal:** type + Enter runs via `shell` (try `help`, `list`, `lua`). `clear` wipes scrollback. Output is scraped back into the window.
+- **Settings:** cycle wallpaper color, toggle 12/24h clock, toggle auto-update. Saves instantly, desktop applies live.
+- **Update / Hello / About:** as before.
 
 ## Controls (v1)
 

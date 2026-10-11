@@ -4,8 +4,23 @@
 
 local Desktop = {}
 
-function Desktop.run(Window, apps)
+function Desktop.run(Window, apps, opts)
   apps = apps or {}
+  opts = opts or {}
+  local sessionUser = opts.user -- may be nil (no accounts)
+  -- Live settings (reloaded every draw so the Settings app applies instantly).
+  local wallpaper = colours.lightBlue
+  local clock24 = true
+  local function loadSettings()
+    if not fs.exists("macaroon/settings.lua") then return end
+    local ok, S = pcall(dofile, "macaroon/settings.lua")
+    if not ok or type(S) ~= "table" then return end
+    local ok2, s = pcall(S.load)
+    if not ok2 or type(s) ~= "table" then return end
+    if type(s.wallpaper) == "number" then wallpaper = s.wallpaper end
+    if type(s.clock24) == "boolean" then clock24 = s.clock24 end
+  end
+  loadSettings()
   local base = term.current()
   if term.native then
     local ok, native = pcall(term.native)
@@ -22,7 +37,7 @@ function Desktop.run(Window, apps)
   local clockText = "--:--"
 
   local function updateClock()
-    local ok, t = pcall(textutils.formatTime, os.time(), true)
+    local ok, t = pcall(textutils.formatTime, os.time(), clock24 ~= false)
     if ok and type(t) == "string" then
       clockText = t
     else
@@ -75,13 +90,16 @@ function Desktop.run(Window, apps)
   end
 
   local function drawWallpaper()
-    term.setBackgroundColor(colours.lightBlue)
+    term.setBackgroundColor(wallpaper)
     term.setTextColor(colours.white)
     term.clear()
     term.setCursorPos(1, 1)
     -- Simple centered logo
     local logo1 = "macaroon"
     local logo2 = "OS v1"
+    if sessionUser then
+      logo2 = sessionUser .. " - OS"
+    end
     local x1 = math.max(1, math.floor((screenW - #logo1) / 2) + 1)
     local x2 = math.max(1, math.floor((screenW - #logo2) / 2) + 1)
     local yMid = math.floor(screenH / 2) - 1
@@ -121,10 +139,16 @@ function Desktop.run(Window, apps)
     end
     term.write(label)
 
-    -- Clock (right)
+    -- Clock + user (right)
     term.setBackgroundColor(colours.grey)
     term.setTextColor(colours.white)
     local c = " " .. clockText .. " "
+    if sessionUser then
+      c = " " .. tostring(sessionUser) .. " " .. clockText .. " "
+      if #c > screenW - #label - 1 then
+        c = " " .. clockText .. " " -- narrow screen: clock only
+      end
+    end
     term.setCursorPos(math.max(#label + 1, screenW - #c + 1), barY)
     term.write(c)
   end
@@ -133,7 +157,7 @@ function Desktop.run(Window, apps)
     if not startOpen then return end
     -- Menu above taskbar, left side
     local menuW = 16
-    local menuH = #apps + 3 -- title + apps + shutdown + padding
+    local menuH = #apps + 4 -- title + apps + lock + shutdown + padding
     local menuX = 1
     local menuY = screenH - menuH
     if menuY < 1 then menuY = 1 end
@@ -160,6 +184,11 @@ function Desktop.run(Window, apps)
       end
       m.write(name)
     end
+    -- Lock row
+    m.setBackgroundColor(colours.white)
+    m.setTextColor(colours.orange)
+    m.setCursorPos(2, menuH - 2)
+    m.write("Lock")
     -- Shutdown row
     m.setBackgroundColor(colours.white)
     m.setTextColor(colours.red)
@@ -169,6 +198,7 @@ function Desktop.run(Window, apps)
   end
 
   local function drawAll()
+    pcall(loadSettings)
     term.redirect(base)
     screenW, screenH = term.getSize()
     drawWallpaper()
@@ -181,7 +211,7 @@ function Desktop.run(Window, apps)
   local function startMenuHit(gx, gy)
     if not startOpen then return nil end
     local menuW = 16
-    local menuH = #apps + 3
+    local menuH = #apps + 4
     local menuX = 1
     local menuY = screenH - menuH
     if menuY < 1 then menuY = 1 end
@@ -192,6 +222,7 @@ function Desktop.run(Window, apps)
     if row >= 2 and row <= 1 + #apps then
       return apps[row - 1]
     end
+    if row == menuH - 2 then return "lock" end
     if row == menuH - 1 then return "shutdown" end
     return "title"
   end
@@ -199,9 +230,13 @@ function Desktop.run(Window, apps)
   drawAll()
 
   while true do
-    local event, p1, p2, p3 = os.pullEvent()
-
-    if event == "timer" and p1 == clockTimer then
+    -- pullEventRaw: Ctrl+T ("terminate") must NOT drop a locked machine
+    -- to shell, so it is swallowed here. Shutdown/Reboot menu items
+    -- remain the way out.
+    local event, p1, p2, p3 = os.pullEventRaw()
+    if event == "terminate" then
+      drawAll()
+    elseif event == "timer" and p1 == clockTimer then
       updateClock()
       clockTimer = os.startTimer(1)
       drawAll()
@@ -221,6 +256,8 @@ function Desktop.run(Window, apps)
         local hit = startMenuHit(gx, gy)
         if hit == "shutdown" then
           os.shutdown()
+        elseif hit == "lock" then
+          os.reboot() -- reboot returns to the login gate
         elseif type(hit) == "table" then
           startOpen = false
           openApp(hit)
