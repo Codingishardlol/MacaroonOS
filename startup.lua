@@ -235,5 +235,14 @@ end
 
 local ok, err = pcall(Desktop.run, Window, validApps, { user = sessionUser })
 if not ok then
-  fail(tostring(err))
+  -- Graceful crash: blue screen with reboot, never a bare shell dump.
+  local okC, Crash = pcall(dofile, "macaroon/crash.lua")
+  if okC and type(Crash) == "table" and type(Crash.fatal) == "function" then
+    local okF, ferr = pcall(Crash.fatal, err, "desktop")
+    if not okF then
+      fail("Crash screen failed: " .. tostring(ferr) .. " / " .. tostring(err))
+    end
+  else
+    fail(tostring(err))
+  end
 end

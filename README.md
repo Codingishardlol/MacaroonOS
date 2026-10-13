@@ -2,7 +2,7 @@
 
 A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/) — draggable windows, a Start menu, user accounts, and one-command installs and updates.
 
-![version](https://img.shields.io/badge/version-1.5.0-blue)
+![version](https://img.shields.io/badge/version-1.5.1-blue)
 
 ## Features
 
@@ -10,6 +10,7 @@ A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/)
 - 🚀 One-command install (`wget run ...`) with auto-boot on every reboot
 - 🔄 Self-updater: boot-time check, Update app, or `update` command — never a reinstall
 - 🔐 User accounts with salted, stretched password hashes + login gate
+- 💀 Graceful crash screen with error log and auto-reboot
 - 📁 Built-in apps: Files, Terminal, Settings, Users, Store
 
 ## Requirements
