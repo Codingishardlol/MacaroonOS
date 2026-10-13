@@ -114,6 +114,12 @@ local function doGet(e)
     busy = false
     return
   end
+  if string.sub(baseURL, 1, 8) ~= "https://" then
+    status = "Get failed"
+    detail = "source must be https"
+    busy = false
+    return
+  end
   if not http or not http.get then
     status = "Get failed"
     detail = "HTTP disabled"

@@ -164,6 +164,25 @@ local function handleEnter()
     buf = ""
     mode = "chgPw2"
     setStatus("repeat new pw", false)
+  elseif mode == "chgPw0" then
+    -- Prove the current password before touching anything.
+    local name = selectedName()
+    if not name then
+      setStatus("no user", true)
+      cancelInput()
+      return
+    end
+    local UL = loadUsersLib()
+    local okV, good = UL and pcall(UL.verify, name, buf)
+    buf = ""
+    if not (okV and good) then
+      setStatus("wrong password", true)
+      cancelInput("wrong password")
+      return
+    end
+    pendingPw = nil
+    mode = "chgPw1"
+    setStatus("new pw for " .. name, false)
   elseif mode == "chgPw2" then
     if buf ~= pendingPw then
       setStatus("passwords differ", true)
@@ -278,6 +297,8 @@ return {
       win.write(string.sub("Pw: " .. string.rep("*", #buf) .. "_", 1, 28))
     elseif mode == "addPw2" then
       win.write(string.sub("Repeat: " .. string.rep("*", #buf) .. "_", 1, 28))
+    elseif mode == "chgPw0" then
+      win.write(string.sub("Current: " .. string.rep("*", #buf) .. "_", 1, 28))
     elseif mode == "chgPw1" then
       win.write(string.sub("New pw: " .. string.rep("*", #buf) .. "_", 1, 28))
     elseif mode == "chgPw2" then
@@ -425,11 +446,11 @@ return {
             setStatus("no user", true)
             return true
           end
-          mode = "chgPw1"
+          mode = "chgPw0"
           buf = ""
           pendingPw = nil
           confirmDel = false
-          setStatus("new pw for " .. name, false)
+          setStatus("current pw for " .. name, false)
           return true
         end
       end

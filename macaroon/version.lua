@@ -1,5 +1,5 @@
 -- Macaroon OS version
 return {
-  version = "1.6.0",
+  version = "1.7.0",
   name = "macaroon OS"
 }

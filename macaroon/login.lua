@@ -217,11 +217,12 @@ function Login.run()
     end
     if fails >= 20 then
       -- Persistent backoff: survives reboot, unlike the 5-try session cap.
+      -- Falls THROUGH to the check below: the wait must delay entry,
+      -- never deny it, or the owner locks themselves out permanently.
       notice = "Too many failures. Wait 30s."
       noticeBad = true
       draw()
       sleep(30)
-      return nil
     end
     local okV, good = pcall(UserLib.verify, who, pw)
     if okV and good then

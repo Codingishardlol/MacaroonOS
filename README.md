@@ -2,7 +2,7 @@
 
 A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/) — draggable windows, a Start menu, user accounts, and one-command installs and updates.
 
-![version](https://img.shields.io/badge/version-1.6.0-blue)
+![version](https://img.shields.io/badge/version-1.7.0-blue)
 
 ## Features
 
@@ -11,6 +11,7 @@ A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/)
 - 🔄 Self-updater: boot-time check, Update app, or `update` command — never a reinstall
 - 🔐 User accounts with salted, stretched password hashes + login gate
 - 💀 Graceful crash screen with error log and auto-reboot
+- 🛡️ Hardened updates: HTTPS-only, path-allowlisted, staged, default-no
 - 📁 Built-in apps: Files, Terminal, Settings, Users, Store
 
 ## Requirements
@@ -34,9 +35,9 @@ The installer downloads everything to `/`, backs up your old `startup.lua` to `s
 
 Bump-free updates — pick any one:
 
-1. **Reboot** and answer `Update 1.3.0 -> 1.4.0? [Y/n]` when prompted.
+1. **Reboot** and answer `Update 1.6.1 -> 1.7.0? [y/N]` when prompted (explicit yes required).
 2. **Start → Update** → `[ Check ]` → `[ Install ]`, then reboot.
-3. Open a shell (`Ctrl+T` exits the desktop) and run `update`.
+3. Open the Terminal app and run `update` (Ctrl+T is swallowed by design, so the Terminal app is the shell).
 
 The updater only replaces code files. Your accounts (`users.dat`), settings, and update source are never touched. Updates never fail silently or block boot when offline.
 
@@ -58,13 +59,13 @@ Controls: left-click focuses, drag the title bar to move, `X` closes, `F1` toggl
 
 Passwords are stored salted and hashed (SHA-256 × 100 rounds) in `macaroon/users.dat` — never plaintext. With accounts present, every boot stops at a Windows-style login screen: click a user tile (or ↑/↓), type the masked password, Enter. Five misses shuts the machine down, `Shutdown` sits bottom-right, and a Welcome spinner hands off to the desktop. No accounts = boots straight in. `Ctrl+T` is swallowed at every layer (splash, login, desktop), and Start → Lock returns to login.
 
-Hardening notes: updates only run over HTTPS and validate every manifest path (no traversal, no data-file overwrites, 256KB cap); a present-but-unreadable accounts file shuts down instead of booting open; repeated failures across reboots earn a 30s lockout; the Terminal restores any globals a command tampers with; hold `R` during the splash for a recovery shell.
+Hardening notes: updates only run over HTTPS and validate every manifest path (no traversal, no data-file overwrites, 256KB cap); a present-but-unreadable accounts file shuts down instead of booting open; repeated failures across reboots earn a 30s lockout; the Terminal restores any globals a command tampers with; hold `R` during the splash for recovery (reinstall-only, accounts kept — deliberately no shell, so it can't be used to delete the accounts file).
 
 Honest limits: anyone who can open the computer's files (world save, CraftOS-PC data folder) can delete the gate — like every ComputerCraft OS, this stops walk-ups, not owners.
 
 ## Uninstall
 
-Terminate to shell (`Ctrl+T`) and delete the OS files:
+Open the Terminal app (Ctrl+T is swallowed, so there is no exit-to-shell shortcut) and delete the OS files:
 
 ```
 rm startup.lua

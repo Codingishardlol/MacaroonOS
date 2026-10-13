@@ -45,9 +45,9 @@ if not info.updateAvailable then
 end
 
 print("")
-write("Update " .. tostring(info.localVer) .. " -> " .. tostring(info.remoteVer) .. "? [Y/n] ")
+write("Update " .. tostring(info.localVer) .. " -> " .. tostring(info.remoteVer) .. "? [y/N] ")
 local ans = read()
-if ans and string.lower(string.sub(ans, 1, 1)) == "n" then
+if not (ans and string.lower(string.sub(ans, 1, 1)) == "y") then
   print("Cancelled.")
   return
 end

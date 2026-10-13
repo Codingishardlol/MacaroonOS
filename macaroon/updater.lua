@@ -135,6 +135,12 @@ function Updater.safePath(path)
   if PROTECTED[base] then
     return false, "protected file"
   end
+  -- Layout allowlist: the OS only ever installs these. A manifest
+  -- pointing anywhere else (rom/, stray roots) is refused outright.
+  if path ~= "startup.lua" and path ~= "update.lua"
+    and string.sub(path, 1, 9) ~= "macaroon/" then
+    return false, "outside OS layout"
+  end
   return true
 end
 
@@ -272,6 +278,12 @@ function Updater.perform(baseURL, onProgress)
         .. " (" .. tostring(why) .. ")"
     end
   end
+  -- Stage first: every file downloads to path.new, and nothing is
+  -- touched until all succeed. A failure then leaves the install as it
+  -- was instead of a mix of old and new versions. The final swap loop
+  -- is renames only, so the mixed window shrinks to nearly nothing
+  -- (true atomicity isn't possible on this filesystem).
+  local staged = {}
   for i, path in ipairs(list) do
     if onProgress then
       pcall(onProgress, path, i, #list)
@@ -296,12 +308,41 @@ function Updater.perform(baseURL, onProgress)
     if dir ~= "" and dir ~= "." and not fs.exists(dir) then
       fs.makeDir(dir)
     end
-    local out = fs.open(path, "w")
+    local tmp = path .. ".new"
+    local out = fs.open(tmp, "w")
     if not out then
-      return false, "FAILED " .. path .. ": cannot write"
+      return false, "FAILED " .. path .. ": cannot stage"
     end
-    out.write(data)
-    out.close()
+    local okW = pcall(out.write, data)
+    pcall(out.close)
+    if not okW then
+      pcall(fs.delete, tmp)
+      return false, "FAILED " .. path .. ": cannot stage"
+    end
+    staged[#staged + 1] = { path = path, tmp = tmp }
+  end
+  for _, e in ipairs(staged) do
+    local moved = false
+    if fs.move then
+      moved = pcall(fs.move, e.tmp, e.path)
+    end
+    if not moved then
+      -- Fallback: copy bytes over, then drop the stage file.
+      local r = fs.open(e.tmp, "r")
+      local data = r and r.readAll()
+      if r then r.close() end
+      if type(data) == "string" then
+        local w = fs.open(e.path, "w")
+        if w then
+          moved = pcall(w.write, data)
+          w.close()
+        end
+      end
+      pcall(fs.delete, e.tmp)
+    end
+    if not moved then
+      return false, "FAILED " .. e.path .. ": cannot apply"
+    end
   end
   -- Remember source for next check.
   pcall(Updater.setBaseURL, baseURL)

@@ -113,17 +113,41 @@ pcall(function()
   end
 end)
 if wantRecovery then
-  term.setBackgroundColor(colours.black)
-  term.setTextColor(colours.white)
-  term.clear()
-  term.setCursorPos(1, 1)
-  print("Recovery shell. Type exit when done.")
-  if shell and shell.run then
-    pcall(shell.run, "sh")
-  else
-    print("No shell available.")
-    sleep(2)
-  end
+  -- Limited recovery: reinstall code from the network or reboot.
+  -- Deliberately NOT a shell: an unauthenticated shell here would
+  -- defeat the entire login gate (delete users.dat, reboot, walk in).
+  -- Reinstalls preserve accounts/data (never in the manifest), so this
+  -- repairs damage without ever unlocking anything.
+  -- Wrapped: Ctrl+T here falls through to login, never to shell.
+  pcall(function()
+    term.setBackgroundColor(colours.black)
+    term.setTextColor(colours.white)
+    term.clear()
+    term.setCursorPos(1, 1)
+    print("Recovery: [1] reinstall OS  [2] reboot")
+    write("> ")
+    local choice = read()
+    if choice == "1" then
+      local okU, Updater = pcall(dofile, "macaroon/updater.lua")
+      if okU and Updater and Updater.perform then
+        print("Reinstalling (accounts kept)...")
+        local okC, okP, perr = pcall(Updater.perform, nil, function(path, i, n)
+          print("[" .. i .. "/" .. n .. "] " .. path)
+        end)
+        if okC and okP then
+          print("Done. Rebooting...")
+          sleep(1)
+        else
+          print("Reinstall failed: " .. tostring(okC and perr or okP))
+          print("Rebooting in 3s...")
+          sleep(3)
+        end
+      else
+        print("Updater missing. Rebooting in 3s...")
+        sleep(3)
+      end
+    end
+  end)
   os.reboot()
 end
 
@@ -238,9 +262,9 @@ do
       return
     end
     bootSay("Update available: " .. tostring(info.localVer) .. " -> " .. tostring(info.remoteVer))
-    write("Update now? [Y/n] ")
+    write("Update now? [y/N] ")
     local ans = read()
-    if ans and string.lower(string.sub(ans, 1, 1)) == "n" then
+    if not (ans and string.lower(string.sub(ans, 1, 1)) == "y") then
       bootSay("Skipped. Open Update app later to install.")
       bootSpinSleep(0.5)
       return
