@@ -82,11 +82,27 @@ if fs.exists("startup.lua") and not fs.exists("startup.bak") then
   end
 end
 
--- 3. Download each file
+-- 3. Download each file (cache-busted: raw hosts serve stale
+-- bodies for minutes after a push, which once caused back-to-back
+-- patch releases to install as the previous version).
+local function cacheBusted(url)
+  local t = nil
+  if os.epoch then
+    local ok, e = pcall(os.epoch, "utc")
+    if ok and type(e) == "number" then t = math.floor(e) end
+  end
+  if not t then
+    t = math.floor((os.time() or 0) * 1000 + (os.clock() or 0) * 1000)
+  end
+  return url .. "?cb=" .. tostring(t)
+end
 for _, path in ipairs(FILES) do
-  local url = BASE_URL .. "/" .. path
+  local url = cacheBusted(BASE_URL .. "/" .. path)
   print("Getting " .. path .. " ...")
-  local res, err = http.get(url)
+  local okGet, res, err = pcall(http.get, url)
+  if not okGet then
+    res, err = nil, "http error: " .. tostring(res)
+  end
   if not res then
     printErr("FAILED " .. path .. ": " .. tostring(err or res))
     printErr("URL: " .. url)
