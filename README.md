@@ -2,7 +2,7 @@
 
 A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/) — draggable windows, a Start menu, user accounts, and one-command installs and updates.
 
-![version](https://img.shields.io/badge/version-1.3.1-blue)
+![version](https://img.shields.io/badge/version-1.4.0-blue)
 
 ## Features
 
@@ -55,7 +55,7 @@ Controls: left-click focuses, drag the title bar to move, `X` closes, `F1` toggl
 
 ## Accounts & security
 
-Passwords are stored salted and hashed (SHA-256 × 100 rounds) in `macaroon/users.dat` — never plaintext. With accounts present, every boot stops at a login gate (5 tries, then shutdown). `Ctrl+T` can't bypass it, and Start → Lock returns to login.
+Passwords are stored salted and hashed (SHA-256 × 100 rounds) in `macaroon/users.dat` — never plaintext. With accounts present, every boot stops at a Windows-style login screen: click a user tile (or ↑/↓), type the masked password, Enter. Five misses shuts the machine down, `Shutdown` sits bottom-right, and a Welcome spinner hands off to the desktop. No accounts = boots straight in. `Ctrl+T` is swallowed at every layer (splash, login, desktop), and Start → Lock returns to login.
 
 Honest limits: anyone who can open the computer's files (world save, CraftOS-PC data folder) can delete the gate — like every ComputerCraft OS, this stops walk-ups, not owners.
 
