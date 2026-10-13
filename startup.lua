@@ -87,14 +87,18 @@ for _, app in ipairs(apps) do
 end
 
 -- Boot splash (Windows-style) with ~2s of spinner animation.
-if Boot and type(Boot.show) == "function" then
-  pcall(Boot.show)
-  bootSay("Starting macaroon OS...")
-  bootSpinSleep(2)
-else
-  term.setBackgroundColor(colours.lightBlue)
-  term.clear()
-end
+-- Wrapped in pcall: Ctrl+T during the splash must fall through to the
+-- update check and login gate below, never abort startup into a shell.
+pcall(function()
+  if Boot and type(Boot.show) == "function" then
+    pcall(Boot.show)
+    bootSay("Starting macaroon OS...")
+    bootSpinSleep(2)
+  else
+    term.setBackgroundColor(colours.lightBlue)
+    term.clear()
+  end
+end)
 
 -- Boot-time update check (skip if macaroon/noautoupdate.txt exists).
 -- Never blocks boot on failure; only prompts when an update is found.
@@ -214,7 +218,7 @@ do
       term.clear()
       term.setCursorPos(1, 1)
       print("Login required. Shutting down.")
-      sleep(1)
+      pcall(sleep, 1) -- mash-proof: terminate here must not escape to shell
       os.shutdown()
       return
     end
