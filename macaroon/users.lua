@@ -1,16 +1,22 @@
 -- Macaroon OS - user accounts (salted SHA256)
 -- File: macaroon/users.dat (never in manifest so updates keep accounts).
--- Format: Lua chunk returning { name = { salt=..., hash=... } }.
+-- Parsed with patterns, NEVER load(): a hostile/corrupt dat file must
+-- not execute or hang the login path (infinite-loop chunks don't yield).
+-- Fail counter: macaroon/fails.dat (also never in manifest).
 
 local Users = {}
 
 local PATH = "macaroon/users.dat"
+local FAILS_PATH = "macaroon/fails.dat"
 local SHA_PATH = "macaroon/sha256.lua"
 -- Key stretching: each password goes through this many SHA256 rounds.
 -- ~100 rounds ~= a few seconds on real CC hardware, but makes
 -- brute force 100x more expensive. Stored per account so it stays
 -- tunable without breaking existing logins.
 local ROUNDS = 100
+local MAX_ROUNDS = 1000 -- clamp: crafted files can't login-DoS us
+local MAX_PW = 64 -- login input and stored passwords share this cap
+local MAX_FILE = 16384 -- dat files bigger than this are ignored
 
 local function loadSHA()
   local ok, sha = pcall(dofile, SHA_PATH)
@@ -26,36 +32,38 @@ local function validName(name)
   return string.match(name, "^[A-Za-z0-9_%-]+$") ~= nil
 end
 
-function Users.list()
-  if not fs.exists(PATH) then return {} end
-  local h = fs.open(PATH, "r")
-  if not h then return {} end
+local function readFile(path)
+  if not fs.exists(path) then return nil end
+  local h = fs.open(path, "r")
+  if not h then return nil end
   local src = h.readAll()
   h.close()
-  local fn, err = load(src, "users", "t", {})
-  if not fn then return {} end
-  local ok, t = pcall(fn)
-  if not ok or type(t) ~= "table" then return {} end
-  local names = {}
-  for name, rec in pairs(t) do
-    if validName(name) and type(rec) == "table"
-       and type(rec.salt) == "string" and type(rec.hash) == "string" then
-      table.insert(names, name)
-    end
-  end  table.sort(names)
-  return names
+  if type(src) ~= "string" or #src > MAX_FILE then return nil end
+  return src
 end
 
+-- Parses users.dat without executing it. Returns { name = {salt,hash,rounds} }.
+-- Accepts exactly the shape writeAll produces; anything else is ignored.
 local function readAll()
-  if not fs.exists(PATH) then return {} end
-  local h = fs.open(PATH, "r")
-  if not h then return {} end
-  local src = h.readAll()
-  h.close()
-  local fn, err = load(src, "users", "t", {})
-  if not fn then return {} end
-  local ok, t = pcall(fn)
-  if not ok or type(t) ~= "table" then return {} end
+  local t = {}
+  local src = readFile(PATH)
+  if not src then return t end
+  for name, salt, hash, rounds in string.gmatch(src,
+      "%[%s*\"([A-Za-z0-9_%-]+)\"%s*%]%s*=%s*{%s*salt%s*=%s*\"([0-9a-fA-F]+)\"%s*,%s*hash%s*=%s*\"([0-9a-fA-F]+)\"%s*,?%s*rounds%s*=%s*(%d+)%s*}") do
+    if validName(name) and #salt <= 64 and #hash == 64 then
+      local r = tonumber(rounds) or 1
+      if r < 1 then r = 1 end
+      if r > MAX_ROUNDS then r = MAX_ROUNDS end
+      t[name] = { salt = salt, hash = string.lower(hash), rounds = r }
+    end
+  end
+  -- Legacy single-round entries (no rounds field).
+  for name, salt, hash in string.gmatch(src,
+      "%[%s*\"([A-Za-z0-9_%-]+)\"%s*%]%s*=%s*{%s*salt%s*=%s*\"([0-9a-fA-F]+)\"%s*,%s*hash%s*=%s*\"([0-9a-fA-F]+)\"%s*}") do
+    if validName(name) and t[name] == nil and #salt <= 64 and #hash == 64 then
+      t[name] = { salt = salt, hash = string.lower(hash), rounds = 1 }
+    end
+  end
   return t
 end
 
@@ -80,12 +88,21 @@ local function writeAll(t)
   return true
 end
 
+function Users.list()
+  local t = readAll()
+  local names = {}
+  for name in pairs(t) do
+    table.insert(names, name)
+  end
+  table.sort(names)
+  return names
+end
+
 local seeded = false
 local function ensureSeed()
   -- Lua's math.random repeats the same sequence every boot unless
-  -- seeded. Identical account-creation orders would then produce
-  -- identical salts on every machine. Mix wall-clock, CPU clock,
-  -- and computer ID; salts are stored anyway, this is about uniqueness.
+  -- seeded. Mix wall-clock, CPU clock, computer ID, and the current
+  -- file size (differs per machine once accounts exist).
   if seeded then return end
   seeded = true
   local s = 0
@@ -99,6 +116,9 @@ local function ensureSeed()
     local ok, id = pcall(os.getComputerID)
     if ok and type(id) == "number" then s = s + id * 7919 end
   end
+  local cur = readFile(PATH)
+  if cur then s = s + #cur * 2654435761 end
+  s = s + #tostring({})
   math.randomseed(s % 2147483647)
   math.random()
   math.random()
@@ -106,8 +126,8 @@ local function ensureSeed()
 end
 
 local function newSalt()
-  -- 8 random bytes as hex; seeded caller-side where possible.
-  local parts = {}  for _ = 1, 8 do
+  local parts = {}
+  for _ = 1, 8 do
     local b = math.random(0, 255)
     local hi = math.floor(b / 16)
     local lo = b % 16
@@ -128,6 +148,18 @@ local function stretch(sha, salt, password, rounds)
   return h
 end
 
+-- Constant-time string compare: no early exit, no length oracle.
+local function sameHash(a, b)
+  if type(a) ~= "string" or type(b) ~= "string" then return false end
+  if #a ~= #b then return false end
+  local diff = 0
+  for i = 1, #a do
+    local x = string.byte(a, i) - string.byte(b, i)
+    if x ~= 0 then diff = diff + 1 end
+  end
+  return diff == 0
+end
+
 -- Creates (or overwrites) a user. Returns true, or false + err.
 function Users.create(name, password)
   if not validName(name) then
@@ -135,6 +167,9 @@ function Users.create(name, password)
   end
   if type(password) ~= "string" or #password < 8 then
     return false, "password min 8 chars"
+  end
+  if #password > MAX_PW then
+    return false, "password max " .. MAX_PW .. " chars"
   end
   local sha = loadSHA()
   if not sha then return false, "sha256 missing" end
@@ -151,14 +186,13 @@ function Users.verify(name, password)
   if not validName(name) or type(password) ~= "string" then
     return false
   end
+  if #password > MAX_PW then return false end
   local sha = loadSHA()
   if not sha then return false end
   local t = readAll()
   local rec = t[name]
   if type(rec) ~= "table" then return false end
-  local rounds = tonumber(rec.rounds) or 1 -- legacy single-round accounts
-  if rounds < 1 then rounds = 1 end
-  return stretch(sha, rec.salt, password, rounds) == rec.hash
+  return sameHash(stretch(sha, rec.salt, password, rec.rounds), rec.hash)
 end
 
 function Users.remove(name)
@@ -170,6 +204,33 @@ end
 
 function Users.hasAccounts()
   return #Users.list() > 0
+end
+
+-- Persistent fail counter (survives reboot, unlike login attempts).
+-- Slows keyboard brute force even across power cycles.
+function Users.failCount()
+  local src = readFile(FAILS_PATH)
+  return tonumber(src and string.match(src, "(%d+)")) or 0
+end
+
+function Users.recordFail()
+  local n = Users.failCount() + 1
+  local h = fs.open(FAILS_PATH, "w")
+  if h then
+    h.write(tostring(n) .. "\n")
+    h.close()
+  end
+  return n
+end
+
+function Users.resetFails()
+  if fs.exists(FAILS_PATH) then
+    pcall(fs.delete, FAILS_PATH)
+  end
+end
+
+function Users.maxPw()
+  return MAX_PW
 end
 
 return Users

@@ -107,6 +107,13 @@ end
 local function loadView(name)
   local path = fs.combine(cwd, name)
   if isDirSafe(path) then return end
+  -- Password hashes are not reading material, even for the owner
+  -- browsing idly: they exist only for offline cracking.
+  local tail = string.match(normDir(path), "([^/]+)$") or ""
+  if tail == "users.dat" then
+    status = "protected file"
+    return
+  end
   local okO, h = pcall(fs.open, path, "r")
   if not okO or not h then status = "cannot open" return end
   local okR, data = pcall(function() return h.readAll() end)
@@ -165,9 +172,10 @@ local function deleteSelected()
     status = "system file protected"
     return true
   end
-  local ok = pcall(fs.delete, fs.combine(cwd, e))
+  local target = fs.combine(cwd, e)
+  pcall(fs.delete, target)
   delArm = false
-  if ok then
+  if not existsSafe(target) then
     selected = 0
     inputMode = nil
     inputText = ""
@@ -198,6 +206,11 @@ end
 local function doCopy()
   local e = entries[selected]
   if not e then status = "nothing selected" return end
+  local tail = string.match(e, "([^/]+)$") or e
+  if tail == "users.dat" then
+    status = "protected file"
+    return
+  end
   local idx = selected
   local isD = isDirCache[idx] or isDirSafe(fs.combine(cwd, e))
   local cand = uniqueCopyName(e, isD)

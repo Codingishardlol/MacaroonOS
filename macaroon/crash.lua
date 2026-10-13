@@ -9,8 +9,13 @@ local TIMEOUT = 15
 
 local function logCrash(err, context)
   local ok = pcall(function()
+    -- Single line, no newlines: the message is attacker-influenced
+    -- (it can contain a whole hostile program's error) and must not
+    -- forge extra log lines.
+    local clean = string.gsub(tostring(err), "[\r\n]", " ")
+    local ctx = string.gsub(tostring(context or "?"), "[\r\n]", " ")
     local line = (os.date and os.date("%Y-%m-%d %H:%M:%S") or "?")
-      .. " [" .. tostring(context or "?") .. "] " .. tostring(err) .. "\n"
+      .. " [" .. ctx .. "] " .. string.sub(clean, 1, 300) .. "\n"
     local h = fs.open("macaroon/crash.log", "a")
     if h then
       h.write(line)

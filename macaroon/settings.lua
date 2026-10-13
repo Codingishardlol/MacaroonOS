@@ -40,10 +40,19 @@ function Settings.load()
   if not h then return sanitize(nil) end
   local src = h.readAll()
   h.close()
-  local fn, err = load(src, "settings", "t", {})
-  if not fn then return sanitize(nil) end
-  local ok, t = pcall(fn)
-  if not ok then return sanitize(nil) end
+  -- Parsed, never load(): a hostile chunk must not execute or hang draw.
+  if type(src) ~= "string" or #src > 1024 then
+    return sanitize(nil)
+  end
+  local t = {}
+  local wp = string.match(src, "wallpaper%s*=%s*(%d+)")
+  if wp then t.wallpaper = tonumber(wp) end
+  local c24 = string.match(src, "clock24%s*=%s*(%a+)")
+  if c24 == "true" then t.clock24 = true
+  elseif c24 == "false" then t.clock24 = false end
+  local au = string.match(src, "autoupdate%s*=%s*(%a+)")
+  if au == "true" then t.autoupdate = true
+  elseif au == "false" then t.autoupdate = false end
   return sanitize(t)
 end
 

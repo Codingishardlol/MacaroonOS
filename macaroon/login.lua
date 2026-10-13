@@ -210,13 +210,28 @@ function Login.run()
     noticeBad = false
     draw()
     local who = names[sel]
+    local fails = 0
+    if UserLib.failCount then
+      local okF, n = pcall(UserLib.failCount)
+      if okF and type(n) == "number" then fails = n end
+    end
+    if fails >= 20 then
+      -- Persistent backoff: survives reboot, unlike the 5-try session cap.
+      notice = "Too many failures. Wait 30s."
+      noticeBad = true
+      draw()
+      sleep(30)
+      return nil
+    end
     local okV, good = pcall(UserLib.verify, who, pw)
     if okV and good then
+      if UserLib.resetFails then pcall(UserLib.resetFails) end
       welcome(who)
       return who
     end
     attempts = attempts + 1
     pw = ""
+    if UserLib.recordFail then pcall(UserLib.recordFail) end
     if attempts >= MAX_ATTEMPTS then
       return false -- locked sentinel
     end
@@ -277,7 +292,7 @@ function Login.run()
         draw()
       end
     elseif event == "char" then
-      if #pw < 32 then
+      if #pw < 64 then -- matches Users.create max; longer could never verify
         pw = pw .. tostring(p1)
       end
       draw()

@@ -53,7 +53,8 @@ local function doList()
   end
   entries = {}
   for _, path in ipairs(list) do
-    if type(path) == "string" and string.match(path, "^macaroon/apps/.+%.lua$") then
+    if type(path) == "string" and string.match(path, "^macaroon/apps/.+%.lua$")
+      and not string.find(path, "%.%.") then -- traversal never listed
       local e = { path = path, name = shortName(path), have = false }
       refreshHave(e)
       entries[#entries + 1] = e
@@ -76,12 +77,36 @@ local function doGet(e)
   status = "Getting " .. e.name .. "..."
   detail = ""
   local baseURL = nil
+  local safePath = nil
   local okU, Updater = pcall(dofile, "macaroon/updater.lua")
-  if okU and type(Updater) == "table" and type(Updater.getBaseURL) == "function" then
-    local okB, u = pcall(Updater.getBaseURL)
-    if okB and type(u) == "string" and u ~= "" then
-      baseURL = u
+  if okU and type(Updater) == "table" then
+    if type(Updater.getBaseURL) == "function" then
+      local okB, u = pcall(Updater.getBaseURL)
+      if okB and type(u) == "string" and u ~= "" then
+        baseURL = u
+      end
     end
+    if type(Updater.safePath) == "function" then
+      safePath = Updater.safePath
+    end
+  end
+  -- Belt and braces: entries come from a remote manifest, so re-validate
+  -- here too (dot-dot like macaroon/apps/../../startup.lua must die).
+  local okS = false
+  if safePath then
+    local okC, res = pcall(safePath, e.path)
+    okS = okC and res
+  else
+    okS = type(e.path) == "string"
+      and string.sub(e.path, 1, 1) ~= "/"
+      and not string.find(e.path, "%.%.")
+      and string.sub(e.path, -4) == ".lua"
+  end
+  if not okS then
+    status = "Get failed"
+    detail = "blocked path"
+    busy = false
+    return
   end
   if not baseURL then
     status = "Get failed"
@@ -113,6 +138,12 @@ local function doGet(e)
   if not okR or type(data) ~= "string" or #data == 0 then
     status = "Get failed"
     detail = "empty file"
+    busy = false
+    return
+  end
+  if #data > 262144 then
+    status = "Get failed"
+    detail = "file too big"
     busy = false
     return
   end

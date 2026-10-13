@@ -105,6 +105,43 @@ local function safeGet(url)
   return a
 end
 
+-- Only these basenames may never be written by install/update.
+-- Manifests are remote-controlled: a rogue entry naming one of these
+-- (e.g. users.dat) would wipe accounts and skip the login gate.
+local PROTECTED = {
+  ["users.dat"] = true, ["settings.dat"] = true,
+  ["update_url.txt"] = true, ["crash.log"] = true,
+  ["startup.bak"] = true, ["noautoupdate.txt"] = true,
+  ["fails.dat"] = true,
+}
+
+-- safePath: validates a manifest/Store path before any write.
+-- Returns true, or false + reason. Rejects absolute paths, dot-dot
+-- traversal, non-Lua files, and protected data files.
+function Updater.safePath(path)
+  if type(path) ~= "string" or path == "" then
+    return false, "empty path"
+  end
+  if string.sub(path, 1, 1) == "/" then
+    return false, "absolute path"
+  end
+  if string.find(path, "%.%.") then
+    return false, "dot-dot"
+  end
+  if string.sub(path, -4) ~= ".lua" then
+    return false, "not lua"
+  end
+  local base = string.match(path, "([^/]+)$") or path
+  if PROTECTED[base] then
+    return false, "protected file"
+  end
+  return true
+end
+
+local function requireHTTPS(url)
+  return type(url) == "string" and string.sub(url, 1, 8) == "https://"
+end
+
 -- Returns -1 if a<b, 0 if equal, 1 if a>b
 function Updater.compare(a, b)
   local pa = splitVer(a)
@@ -123,6 +160,9 @@ function Updater.getRemoteVersion(baseURL)
   baseURL = baseURL or Updater.getBaseURL()
   if not http then
     return nil, "HTTP disabled"
+  end
+  if not requireHTTPS(baseURL) then
+    return nil, "update source must be https"
   end
   local url = cacheBusted(baseURL .. "/" .. VERSION_PATH)
   local res, err = safeGet(url)
@@ -156,6 +196,30 @@ function Updater.check(baseURL)
 end
 
 local function loadManifestFromSource(src)
+  if type(src) ~= "string" or #src > 16384 then
+    return nil, "manifest too big"
+  end
+  -- Charset gate: a manifest is return { "paths", ... } and nothing else.
+  -- Anything outside this alphabet (calls, comments, escapes) is rejected
+  -- BEFORE load, so hostile code can neither run nor hang us. Keywords
+  -- need a second gate below: `while true do end` is all-charset-legal.
+  if string.find(src, "[^%w%./_\"',%s{}]") then
+    return nil, "manifest has illegal characters"
+  end
+  -- Keyword ban (separate loop: frontier+alternation groups don't mix
+  -- in Lua patterns). `while true do end` is charset-legal, so without
+  -- this it would reach load() and hang us with an unyielding loop.
+  local bad = { "do", "end", "while", "for", "function", "repeat",
+    "until", "if", "then", "else", "elseif", "local", "in" }
+  for _, kw in ipairs(bad) do
+    if string.find(src, "%f[%w_]" .. kw .. "%f[^%w_]") then
+      return nil, "manifest has code keywords"
+    end
+  end
+  local _, opens = string.gsub(src, "{", "")
+  if opens > 64 then
+    return nil, "manifest too nested"
+  end
   local fn, err = load(src, "manifest", "t", {})
   if not fn then return nil, err end
   local ok, list = pcall(fn)
@@ -167,7 +231,7 @@ end
 function Updater.getFileList(baseURL)
   -- Prefer remote manifest so new files are picked up.
   baseURL = baseURL or Updater.getBaseURL()
-  if http then
+  if http and requireHTTPS(baseURL) then
     local res = safeGet(cacheBusted(baseURL .. "/" .. MANIFEST_PATH))
     if res then
       local src = res.readAll()
@@ -185,15 +249,28 @@ function Updater.getFileList(baseURL)
 end
 
 -- Downloads every file in the manifest. onProgress(path, i, total) optional.
--- Returns true on success, or false + err.
+-- Fail-closed: non-HTTPS sources and invalid manifest entries abort the
+-- whole update; downloads over 256KB are refused. Returns true on
+-- success, or false + err.
+local MAX_DOWNLOAD = 262144
 function Updater.perform(baseURL, onProgress)
   baseURL = baseURL or Updater.getBaseURL()
   if not http then
     return false, "HTTP disabled"
   end
+  if not requireHTTPS(baseURL) then
+    return false, "update source must be https"
+  end
   local list, merr = Updater.getFileList(baseURL)
   if not list then
     return false, merr
+  end
+  for _, path in ipairs(list) do
+    local okP, why = Updater.safePath(path)
+    if not okP then
+      return false, "blocked manifest entry " .. tostring(path)
+        .. " (" .. tostring(why) .. ")"
+    end
   end
   for i, path in ipairs(list) do
     if onProgress then
@@ -204,10 +281,16 @@ function Updater.perform(baseURL, onProgress)
     if not res then
       return false, "FAILED " .. path .. ": " .. tostring(err)
     end
-    local data = res.readAll()
-    res.close()
+    local okR, data = pcall(res.readAll)
+    pcall(res.close)
+    if not okR then
+      return false, "FAILED " .. path .. ": unreadable"
+    end
     if not data or #data == 0 then
       return false, "FAILED " .. path .. ": empty file"
+    end
+    if #data > MAX_DOWNLOAD then
+      return false, "FAILED " .. path .. ": too big"
     end
     local dir = fs.getDir(path)
     if dir ~= "" and dir ~= "." and not fs.exists(dir) then

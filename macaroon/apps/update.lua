@@ -78,7 +78,13 @@ local function doInstall()
     busy = false
     return
   end
-  local ok, err = Updater.perform(baseURL)
+  local okC, ok, err = pcall(Updater.perform, baseURL)
+  if not okC then
+    status = "Install crashed"
+    detail = tostring(ok):sub(1, 26)
+    busy = false
+    return
+  end
   if ok then
     refreshLocals()
     updateAvailable = false

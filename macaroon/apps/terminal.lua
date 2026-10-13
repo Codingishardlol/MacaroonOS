@@ -32,9 +32,59 @@ local function runCommand(win, cmd)
     push("no shell API")
     return
   end
+  -- Snapshot _G AND one level of shared API tables: commands run with
+  -- full access, so `os.pullEventRaw = ...` mutates the shared os table
+  -- rather than _G, and would otherwise hijack the desktop persistently.
+  local snap = {}
+  local sub = {}
+  for k, v in pairs(_G) do
+    snap[k] = v
+    if type(v) == "table" then
+      local inner = {}
+      for sk, sv in pairs(v) do
+        inner[sk] = sv
+      end
+      sub[k] = inner
+    end
+  end
   local prev = term.current()
   term.redirect(win)
   local ok, err = pcall(shell.run, cmd)
+  -- Restore globals changed or added by the command.
+  local added = {}
+  for k in pairs(_G) do
+    if snap[k] == nil then
+      added[#added + 1] = k
+    end
+  end
+  for _, k in ipairs(added) do
+    _G[k] = nil
+  end
+  for k, v in pairs(snap) do
+    if _G[k] ~= v then
+      _G[k] = v
+    end
+  end
+  -- Restore mutated API tables still present under the same key.
+  for k, inner in pairs(sub) do
+    local t = _G[k]
+    if type(t) == "table" then
+      local subAdded = {}
+      for sk in pairs(t) do
+        if inner[sk] == nil then
+          subAdded[#subAdded + 1] = sk
+        end
+      end
+      for _, sk in ipairs(subAdded) do
+        t[sk] = nil
+      end
+      for sk, sv in pairs(inner) do
+        if t[sk] ~= sv then
+          t[sk] = sv
+        end
+      end
+    end
+  end
   -- Scrape visible window content into scrollback before desktop redraws.
   local w, h = win.getSize()
   for r = 1, h do

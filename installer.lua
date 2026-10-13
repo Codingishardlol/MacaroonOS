@@ -111,10 +111,18 @@ for _, path in ipairs(FILES) do
     print("(Upload CONTENTS of 'Macaroon OS' folder, not the folder itself.)")
     return
   end
-  local data = res.readAll()
-  res.close()
+  local okR, data = pcall(res.readAll)
+  pcall(res.close)
+  if not okR then
+    printErr("FAILED " .. path .. ": unreadable")
+    return
+  end
   if not data or #data == 0 then
     printErr("FAILED " .. path .. ": empty file")
+    return
+  end
+  if #data > 262144 then
+    printErr("FAILED " .. path .. ": too big")
     return
   end
   local dir = fs.getDir(path)
