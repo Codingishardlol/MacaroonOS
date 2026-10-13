@@ -1,5 +1,5 @@
 -- Macaroon OS - graphical login screen (secure boot gate)
--- Windows-style: wallpaper background, user tiles, password box,
+-- Cookie logo + wordmark, badge user tiles, pill password box,
 -- Welcome spinner on success. Fullscreen term UI, no desktop needed.
 -- Returns username on success, or nil + reason ("shutdown", "locked",
 -- "no accounts", ...). Ignores terminate so Ctrl+T can't escape it;
@@ -8,6 +8,19 @@
 local Login = {}
 
 local MAX_ATTEMPTS = 5
+local TILE_W = 26
+local BOX_W = 24
+local MAX_TILES = 5
+
+-- 12x6 macaroon cookie (same art as the boot splash).
+local COOKIE = {
+  "fffccccccfff",
+  "ffccccccccff",
+  "fcccfccfcccf",
+  "fccfccccfccf",
+  "ffcccfccccff",
+  "fffccccccfff",
+}
 
 local function base()
   local b = term.current()
@@ -47,26 +60,30 @@ function Login.run()
 
   local bg = wallpaperColor()
   local sel = 1
+  local top = 1 -- first visible tile (scrolls for long lists)
   local pw = ""
-  local focused = true -- password box always focused (single purpose screen)
   local attempts = 0
   local notice = ""
   local noticeBad = false
   local blinkOn = true
   local blinkTimer = os.startTimer(0.5)
-  -- Layout (recomputed each draw).
-  local L = {}
+  local L = {} -- layout cache, recomputed each draw
 
   local function layout()
     local w, h = term.getSize()
     L.w, L.h = w, h
-    L.listY = math.max(3, math.floor(h / 2) - math.floor(#names / 2) - 3)
-    L.boxY = L.listY + #names + 2
+    L.logoX = math.max(1, math.floor((w - 12) / 2) + 1)
+    L.logoY = 2
+    L.wordY = 9
+    L.tileY = 11
+    L.tileX = math.max(1, math.floor((w - TILE_W) / 2) + 1)
+    L.boxY = L.tileY + math.min(#names, MAX_TILES) + 1
     if L.boxY > h - 3 then L.boxY = h - 3 end
-    L.boxX = math.max(2, math.floor((w - 22) / 2) + 1)
-    L.boxW = 22
+    L.boxX = math.max(1, math.floor((w - BOX_W) / 2) + 1)
     L.msgY = L.boxY + 2
     if L.msgY > h - 1 then L.msgY = h - 1 end
+    if sel < top then top = sel end
+    if sel > top + MAX_TILES - 1 then top = sel - MAX_TILES + 1 end
   end
 
   local function draw()
@@ -76,49 +93,66 @@ function Login.run()
     term.setBackgroundColor(bg)
     term.setTextColor(colours.white)
     term.clear()
-    -- Brand, small, top-left.
-    term.setCursorPos(2, 1)
-    term.write("macaroon OS")
-    -- User tiles.
-    for i, n in ipairs(names) do
-      local y = L.listY + i - 1
+    -- Cookie logo.
+    for i, rowBg in ipairs(COOKIE) do
+      local y = L.logoY + i - 1
       if y >= 1 and y <= h then
-        local label = (i == sel and "> " or "  ") .. n
-        if i == sel then
-          term.setBackgroundColor(colours.white)
-          term.setTextColor(bg)
-        else
-          term.setBackgroundColor(bg)
-          term.setTextColor(colours.white)
-        end
-        term.setCursorPos(math.max(2, math.floor((w - 24) / 2) + 1), y)
-        term.write(string.sub(label .. string.rep(" ", 24), 1, 24))
+        term.setCursorPos(L.logoX, y)
+        term.blit(string.rep(" ", 12), string.rep("f", 12), rowBg)
       end
     end
-    -- Avatar initial for selected user.
-    local who = names[sel] or "?"
+    -- Wordmark.
+    term.setBackgroundColor(bg)
+    term.setTextColor(colours.white)
+    local word = "macaroon"
+    term.setCursorPos(math.max(1, math.floor((w - #word) / 2) + 1), L.wordY)
+    term.write(word)
+    -- User tiles.
+    for r = 1, MAX_TILES do
+      local idx = top + r - 1
+      local y = L.tileY + r - 1
+      if idx <= #names and y >= 1 and y <= h then
+        local n = names[idx]
+        term.setCursorPos(L.tileX, y)
+        if idx == sel then
+          -- Selected: bright bar with initial badge.
+          term.setBackgroundColor(colours.white)
+          term.setTextColor(bg)
+          term.write(" " .. string.upper(string.sub(n, 1, 1)) .. " ")
+          term.setBackgroundColor(bg)
+          term.setTextColor(colours.white)
+          term.write(" " .. string.sub(n, 1, TILE_W - 6))
+        else
+          term.setBackgroundColor(bg)
+          term.setTextColor(colours.lightGrey)
+          term.write("   " .. string.sub(n, 1, TILE_W - 6))
+        end
+      end
+    end
+    -- Scroll hint.
+    if #names > MAX_TILES then
+      term.setBackgroundColor(bg)
+      term.setTextColor(colours.lightGrey)
+      term.setCursorPos(L.tileX + TILE_W - 6, L.tileY + MAX_TILES - 1)
+      term.write("v more")
+    end
+    -- Password pill.
     term.setBackgroundColor(colours.white)
-    term.setTextColor(bg)
-    term.setCursorPos(math.floor(w / 2), L.boxY - 1)
-    term.write(" " .. string.upper(string.sub(who, 1, 1)) .. " ")
-    -- Password box.
-    term.setBackgroundColor(colours.white)
-    term.setTextColor(colours.lightGrey)
     term.setCursorPos(L.boxX, L.boxY)
-    term.write(string.rep(" ", L.boxW))
+    term.write(string.rep(" ", BOX_W))
     term.setCursorPos(L.boxX + 1, L.boxY)
     if pw == "" then
       term.setTextColor(colours.grey)
       term.write("Password")
     else
       term.setTextColor(colours.black)
-      term.write(string.sub(string.rep("*", #pw), 1, L.boxW - 2))
-    end
-    if focused and blinkOn and pw ~= "" then
-      local cx = L.boxX + 1 + #pw
-      if cx < L.boxX + L.boxW then
-        term.setCursorPos(cx, L.boxY)
-        term.write("_")
+      term.write(string.sub(string.rep("*", #pw), 1, BOX_W - 2))
+      if blinkOn then
+        local cx = L.boxX + 1 + #pw
+        if cx < L.boxX + BOX_W then
+          term.setCursorPos(cx, L.boxY)
+          term.write("_")
+        end
       end
     end
     -- Notice line.
@@ -132,7 +166,11 @@ function Login.run()
     term.write(string.rep(" ", w - 2))
     term.setCursorPos(2, L.msgY)
     term.write(string.sub(notice, 1, w - 2))
-    -- Shutdown button, bottom-right.
+    -- Bottom bar: brand left, shutdown right.
+    term.setBackgroundColor(bg)
+    term.setTextColor(colours.lightGrey)
+    term.setCursorPos(2, h)
+    term.write("macaroon OS")
     local sLabel = "[ Shutdown ]"
     term.setBackgroundColor(colours.red)
     term.setTextColor(colours.white)
@@ -149,10 +187,14 @@ function Login.run()
     term.clear()
     local frames = { "|", "/", "-", "\\" }
     local cy = math.floor(h / 2)
+    local line1 = "Welcome,"
+    local line2 = name
     for i = 1, 10 do
-      term.setCursorPos(math.max(1, math.floor((w - 7) / 2) + 1), cy)
-      term.write("Welcome")
-      term.setCursorPos(math.floor(w / 2), cy + 2)
+      term.setCursorPos(math.max(1, math.floor((w - #line1) / 2) + 1), cy)
+      term.write(line1)
+      term.setCursorPos(math.max(1, math.floor((w - #line2) / 2) + 1), cy + 1)
+      term.write(string.sub(line2, 1, w))
+      term.setCursorPos(math.floor(w / 2), cy + 3)
       term.write(frames[(i - 1) % 4 + 1])
       sleep(0.15)
     end
@@ -176,7 +218,7 @@ function Login.run()
     attempts = attempts + 1
     pw = ""
     if attempts >= MAX_ATTEMPTS then
-      return false -- locked sentinel (nil-safe: distinct from retry)
+      return false -- locked sentinel
     end
     notice = "Incorrect password. " .. (MAX_ATTEMPTS - attempts) .. " left."
     noticeBad = true
@@ -187,8 +229,7 @@ function Login.run()
   while true do
     local event, p1, p2, p3 = os.pullEventRaw()
     if event == "terminate" then
-      -- Swallowed: Ctrl+T must not escape the gate. drawAll to repaint.
-      draw()
+      draw() -- swallowed: Ctrl+T must not escape the gate
     elseif event == "timer" and p1 == blinkTimer then
       blinkOn = not blinkOn
       blinkTimer = os.startTimer(0.5)
@@ -201,9 +242,11 @@ function Login.run()
       if gy == L.h and gx >= L.w - #sLabel then
         return nil, "shutdown"
       end
-      for i in ipairs(names) do
-        if gy == L.listY + i - 1 then
-          sel = i
+      for r = 1, MAX_TILES do
+        local idx = top + r - 1
+        if idx <= #names and gy == L.tileY + r - 1
+           and gx >= L.tileX and gx < L.tileX + TILE_W then
+          sel = idx
           notice = ""
           draw()
           break
