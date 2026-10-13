@@ -73,6 +73,21 @@ local function splitVer(v)
   return parts
 end
 
+-- Raw hosts (GitHub raw, etc.) cache aggressively, so back-to-back
+-- releases can read as "up to date" for minutes. Every updater GET
+-- carries a unique query string; servers ignore it, CDNs key on it.
+local function cacheBusted(url)
+  local t = nil
+  if os.epoch then
+    local ok, e = pcall(os.epoch, "utc")
+    if ok and type(e) == "number" then t = math.floor(e) end
+  end
+  if not t then
+    t = math.floor((os.time() or 0) * 1000 + (os.clock() or 0) * 1000)
+  end
+  return url .. "?cb=" .. tostring(t)
+end
+
 -- http.get should return nil+err on failure, but some environments
 -- throw instead (blocked host, no adapter, emulator quirks).
 -- Never let that propagate: check() must never crash.
@@ -109,7 +124,7 @@ function Updater.getRemoteVersion(baseURL)
   if not http then
     return nil, "HTTP disabled"
   end
-  local url = baseURL .. "/" .. VERSION_PATH
+  local url = cacheBusted(baseURL .. "/" .. VERSION_PATH)
   local res, err = safeGet(url)
   if not res then
     return nil, err
@@ -153,7 +168,7 @@ function Updater.getFileList(baseURL)
   -- Prefer remote manifest so new files are picked up.
   baseURL = baseURL or Updater.getBaseURL()
   if http then
-    local res = safeGet(baseURL .. "/" .. MANIFEST_PATH)
+    local res = safeGet(cacheBusted(baseURL .. "/" .. MANIFEST_PATH))
     if res then
       local src = res.readAll()
       res.close()
@@ -184,7 +199,7 @@ function Updater.perform(baseURL, onProgress)
     if onProgress then
       pcall(onProgress, path, i, #list)
     end
-    local url = baseURL .. "/" .. path
+    local url = cacheBusted(baseURL .. "/" .. path)
     local res, err = safeGet(url)
     if not res then
       return false, "FAILED " .. path .. ": " .. tostring(err)
