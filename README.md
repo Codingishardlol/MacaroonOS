@@ -1,146 +1,115 @@
-# Macaroon OS — v1.2 (desktop + updater + accounts)
+# Macaroon OS
 
-Target: **Advanced Computer** (colour + mouse) on CC: Tweaked.
-Tested workflow: CraftOS-PC / CC emulator on Windows.
+A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/) — draggable windows, a Start menu, user accounts, and one-command installs and updates.
 
-## Layout in this folder
+![version](https://img.shields.io/badge/version-1.3.0-blue)
+
+## Features
+
+- 🖥️ Desktop with draggable, focusable windows and a taskbar clock
+- 🚀 One-command install (`wget run ...`) with auto-boot on every reboot
+- 🔄 Self-updater: boot-time check, Update app, or `update` command — never a reinstall
+- 🔐 User accounts with salted, stretched password hashes + login gate
+- 📁 Built-in apps: Files, Terminal, Settings, Users, Store
+
+## Requirements
+
+- An **Advanced Computer** (colour + mouse support)
+- ComputerCraft: Tweaked with the HTTP API enabled
+
+## Install
+
+On the computer, run:
 
 ```
-Macaroon OS/
-  installer.lua   <- hosted, run with `wget run <URL>`
-  update.lua      <- on-computer updater (`update` in shell)
-  startup.lua     <- auto-boots + boot-time update check
-  macaroon/
-    version.lua   <- bump this each release (now 1.2.0)
-    manifest.lua  <- file list (installer + updater use it)
-    updater.lua   <- check/perform API
-    sha256.lua    <- pure-Lua SHA256 for password hashes
-    settings.lua  <- wallpaper/clock/autoupdate store
-    users.lua     <- salted-hash accounts (users.dat)
-    login.lua     <- secure-boot login gate
-    window.lua
-    desktop.lua
-    update_url.txt (created on install, not in repo)
-    settings.dat, users.dat (created on device, never in repo)
-    apps/
-      files.lua     <- Start menu -> Files
-      terminal.lua  <- Start menu -> Terminal
-      settings.lua  <- Start menu -> Settings
-      hello.lua
-      about.lua
-      update.lua  <- Start menu -> Update GUI
+wget run https://raw.githubusercontent.com/Codingishardlol/MacaroonOS/main/installer.lua
 ```
 
-## Install like LevelOS (auto-boot)
+The installer downloads everything to `/`, backs up your old `startup.lua` to `startup.bak`, asks you to create an admin account, then reboots into Macaroon OS. Because CraftOS runs `/startup.lua` on every boot, the OS opens automatically from then on.
 
-1. Push the **contents** of this folder to `https://github.com/Codingishardlol/MacaroonOS` repo root (not the `Macaroon OS` folder itself, to avoid `%20` in URLs).
-2. `installer.lua` and `macaroon/updater.lua` already point to `https://raw.githubusercontent.com/Codingishardlol/MacaroonOS/main`.
-3. Copy `installer.lua` to a pastebin, gist, or just use the raw GitHub URL directly.
-4. On an **Advanced Computer** in Minecraft / CraftOS-PC, run:
-   ```
-   wget run https://raw.githubusercontent.com/Codingishardlol/MacaroonOS/main/installer.lua
-   ```
-   Or if you used pastebin:
-   ```
-   pastebin run XXXXXXXX
-   ```
-5. The installer downloads everything to `/`, backs up old `/startup.lua` to `/startup.bak` (once), and reboots.
-6. Auto-boot: CraftOS always runs `/startup.lua` on boot/reboot. Since our installer places Macaroon `startup.lua` there, Macaroon OS opens automatically every time. To go back to plain CraftOS, delete/rename `/startup.lua` (`startup.bak` is your backup).
+> Prefer pastebin? Upload `installer.lua` there and use `pastebin run <code>` instead.
 
-To update later, just re-run the same `wget run ...` command.
+## Updating
 
-## Updating (no reinstall)
+Bump-free updates — pick any one:
 
-You never need to delete everything. Bump `macaroon/version.lua` in the repo for each release, then on the computer use any of:
+1. **Reboot** and answer `Update 1.3.0 -> 1.4.0? [Y/n]` when prompted.
+2. **Start → Update** → `[ Check ]` → `[ Install ]`, then reboot.
+3. Open a shell (`Ctrl+T` exits the desktop) and run `update`.
 
-1. **Boot check (easiest for testing):** reboot — if remote version > local, you see:
-   ```
-   Update available: 1.1.0 -> 1.2.0
-   Update now? [Y/n]
-   ```
-   Say yes, it downloads via `macaroon/manifest.lua` and reboots. Offline/check-fail never blocks boot.
-   Disable with an empty file at `macaroon/noautoupdate.txt`.
-2. **Desktop:** Start menu -> `Update` -> `[ Check ]` -> `[ Install ]` -> reboot.
-3. **Shell:** press `Ctrl+T` to exit desktop, then run `update`.
+The updater only replaces code files. Your accounts (`users.dat`), settings, and update source are never touched. Updates never fail silently or block boot when offline.
 
-The installer saves the repo URL to `macaroon/update_url.txt`, so later checks know where to fetch. Remote manifest is preferred, so newly added files update automatically.
+## Apps
 
-## Install to CraftOS-PC (Windows, manual)
+| App | What it does |
+| --- | ------------ |
+| Files | Browse, open/view text, copy, rename, create, delete (two-step confirm) |
+| Terminal | Real shell inside a window (`help`, `list`, `lua`…) |
+| Settings | Wallpaper colour, 12/24h clock, auto-update toggle — applied live |
+| Users | Add/remove users, change passwords (last account is protected) |
+| Store | Download individual apps from the repo manifest |
+| Update | Check for and install OS updates |
+| Hello / About | Samples |
 
-1. Open CraftOS-PC.
-2. Create / open an **Advanced Computer**.
-3. Copy the **contents** of this folder (except `README.md`) to the computer root, so the computer has:
-   - `/installer.lua` (optional, for re-installs)
-   - `/update.lua` (`update` command)
-   - `/startup.lua`
-   - `/macaroon/version.lua`
-   - `/macaroon/manifest.lua`
-   - `/macaroon/updater.lua`
-   - `/macaroon/sha256.lua`
-   - `/macaroon/settings.lua`
-   - `/macaroon/users.lua`
-   - `/macaroon/login.lua`
-   - `/macaroon/window.lua`
-   - `/macaroon/desktop.lua`
-   - `/macaroon/apps/files.lua`
-   - `/macaroon/apps/terminal.lua`
-   - `/macaroon/apps/settings.lua`
-   - `/macaroon/apps/hello.lua`
-   - `/macaroon/apps/about.lua`
-   - `/macaroon/apps/update.lua`
-4. Easiest way in CraftOS-PC: drag-drop files into the computer window, or paste the folder contents into the CraftOS-PC data directory for that computer ID.
-5. Reboot the computer (hold Ctrl+R in CraftOS-PC, or `reboot`). `startup.lua` auto-runs.
+Controls: left-click focuses, drag the title bar to move, `X` closes, `F1` toggles Start, `Delete` closes the focused window.
 
-## Accounts + secure boot
+## Accounts & security
 
-The installer asks you to create an admin account (username + password, min 8 chars). Passwords are stored salted + SHA256-hashed x100 rounds in `macaroon/users.dat` — never plaintext, and `users.dat` is never overwritten by updates. Expect a few seconds of "working" at login on real hardware; tune `ROUNDS` in `users.lua` if needed.
+Passwords are stored salted and hashed (SHA-256 × 100 rounds) in `macaroon/users.dat` — never plaintext. With accounts present, every boot stops at a login gate (5 tries, then shutdown). `Ctrl+T` can't bypass it, and Start → Lock returns to login.
 
-Every boot with accounts present shows the login gate (pick user, masked password, 5 tries, `shutdown` to power off). No accounts = boots straight in, so manual copies still work. Ctrl+T cannot bypass it (terminate is trapped at login and in the desktop); file access still can — anyone who can open the computer's folder can delete `users.dat`, so this stops walk-ups, not owners.
+Honest limits: anyone who can open the computer's files (world save, CraftOS-PC data folder) can delete the gate — like every ComputerCraft OS, this stops walk-ups, not owners.
 
-Start menu -> `Lock` reboots back to login. Your name shows in the taskbar and wallpaper.
+## Uninstall
 
-## Apps (v1.2)
+Terminate to shell (`Ctrl+T`) and delete the OS files:
 
-- **Files:** click to select, second click / `[Open]` enters dirs or views text (8KB max), `[Del]` twice deletes, `+Dir` makes folders, `[..]` goes up, scroll works.
-- **Terminal:** type + Enter runs via `shell` (try `help`, `list`, `lua`). `clear` wipes scrollback. Output is scraped back into the window.
-- **Settings:** cycle wallpaper color, toggle 12/24h clock, toggle auto-update. Saves instantly, desktop applies live.
-- **Update / Hello / About:** as before.
+```
+rm startup.lua
+rm macaroon
+```
 
-## Controls (v1)
+Reboot to land back in plain CraftOS. Your pre-install backup is in `startup.bak`.
 
-- Left-click: focus window, click buttons
-- Drag title bar: move window
-- `X` (top-right of window): close window
-- Bottom-left `Macaroon` button: open Start menu
-- Start menu: launch apps, `Shutdown`
-- Clock updates every second (bottom-right)
+## Development
 
-## Writing a new app
+Repo layout (this is also the on-computer layout — repo root == computer root):
 
-Create `macaroon/apps/myapp.lua` returning a table:
+```
+startup.lua          auto-boot: splash → update check → login → desktop
+installer.lua        one-command installer + admin account creation
+update.lua           `update` shell command
+macaroon/
+  boot.lua           splash screen + spinner
+  desktop.lua        event loop, windows, taskbar, Start menu
+  window.lua         window manager (drag, focus, close)
+  login.lua          login gate
+  users.lua          accounts (salted SHA-256 x100)
+  sha256.lua         pure-Lua SHA-256 (no bit ops needed)
+  settings.lua       wallpaper / clock / auto-update store
+  updater.lua        version check + manifest-driven downloads
+  manifest.lua       the file list installers and updaters use
+  version.lua        bump per release (releases are detected from this)
+  apps/              one file per Start-menu app
+```
+
+**Adding an app:** create `macaroon/apps/myapp.lua` returning `{ title, width, height, draw(win), onEvent }`, register `{ name = "My App", path = "macaroon/apps/myapp.lua" }` in `startup.lua`, and add the path to `manifest.lua` + `installer.lua`'s `FILES` (keep the two lists identical).
+
+App contract:
 
 ```lua
 return {
-  title = "My App",
-  width = 30,
-  height = 8,
-  draw = function(win)
+  title = "My App", width = 30, height = 8,
+  draw = function(win)        -- use ONLY win.*, title bar excluded
     win.setCursorPos(2, 2)
     win.write("Hi!")
   end,
-  onEvent = function(win, event, ...)
-    -- optional, coords are already window-content-local
-    -- return true if you handled a click and want a redraw
+  onEvent = function(win, event, p1, cx, cy)
+    -- mouse coords are window-content-local; key/char for focused window
+    return true               -- true = request redraw
   end
 }
 ```
 
-Then register it in `startup.lua` in the `apps` list:
+Rules that keep it working on real hardware: Lua 5.1 subset (no `goto`, `//`, or bitwise ops), colours only via `colours.*` names, wrap every `http.get` in `pcall`, and never throw out of `draw`/`onEvent`.
 
-```lua
-{ name = "My App", path = "macaroon/apps/myapp.lua" }
-```
-
-App contract:
-- `draw(win)` — `win` is a `window` object sized `width x (height-1)` (title bar excluded). Only use `win.*`, not global `term`.
-- `onEvent(win, event, p1, p2, p3)` — `event` is e.g. `mouse_click` with local content coords. Return `true` to request redraw.
+**Releasing:** bump `version.lua`, push to `main` — computers pick it up on next check. Test with `luac -p` on every Lua file before pushing.

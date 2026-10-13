@@ -16,6 +16,40 @@ if not term.isColor or not term.isColor() then
   return
 end
 
+-- Boot splash module (optional; boot continues plainly if missing).
+local okBoot, BootMod = pcall(dofile, "macaroon/boot.lua")
+local Boot = nil
+if okBoot and type(BootMod) == "table" then
+  Boot = BootMod
+end
+
+-- Animated wait: advances the splash spinner instead of a dead sleep.
+-- Falls back to plain sleep when the splash is unavailable.
+local function bootSpinSleep(n)
+  if not Boot or type(Boot.spinTick) ~= "function" then
+    sleep(n)
+    return
+  end
+  local steps = math.floor(n / 0.1 + 0.5)
+  if steps < 1 and n > 0 then
+    steps = 1
+  end
+  for i = 1, steps do
+    sleep(0.1)
+    pcall(Boot.spinTick)
+  end
+end
+
+-- Progress line: splash status row when available, else console print.
+local function bootSay(msg)
+  if Boot and type(Boot.status) == "function" then
+    if pcall(Boot.status, msg) then
+      return
+    end
+  end
+  print(msg)
+end
+
 if not fs.exists("macaroon/window.lua") or not fs.exists("macaroon/desktop.lua") then
   fail("Missing /macaroon/window.lua or /macaroon/desktop.lua")
   return
@@ -40,6 +74,8 @@ local apps = {
   { name = "Hello", path = "macaroon/apps/hello.lua" },
   { name = "About", path = "macaroon/apps/about.lua" },
   { name = "Update", path = "macaroon/apps/update.lua" },
+  { name = "Users", path = "macaroon/apps/users.lua" },
+  { name = "Store", path = "macaroon/apps/store.lua" },
 }
 
 -- Filter out missing apps so one bad file can't break boot
@@ -50,8 +86,15 @@ for _, app in ipairs(apps) do
   end
 end
 
-term.setBackgroundColor(colours.lightBlue)
-term.clear()
+-- Boot splash (Windows-style) with ~2s of spinner animation.
+if Boot and type(Boot.show) == "function" then
+  pcall(Boot.show)
+  bootSay("Starting macaroon OS...")
+  bootSpinSleep(2)
+else
+  term.setBackgroundColor(colours.lightBlue)
+  term.clear()
+end
 
 -- Boot-time update check (skip if macaroon/noautoupdate.txt exists).
 -- Never blocks boot on failure; only prompts when an update is found.
@@ -62,61 +105,64 @@ do
     if not http then return end
     local okU, Updater = pcall(dofile, "macaroon/updater.lua")
     if not okU or type(Updater) ~= "table" then return end
-    print("Checking for updates...")
+    bootSay("Checking for updates...")
     local ok, info = pcall(Updater.check)
     if not ok then
-      print("Update check crashed: " .. tostring(info))
-      print("Continuing boot in 3s...")
-      sleep(3)
+      bootSay("Update check crashed: " .. tostring(info))
+      bootSay("Continuing boot in 3s...")
+      bootSpinSleep(3)
       return
     end
     if type(info) ~= "table" then
-      print("Update check broken. Continuing in 3s...")
-      sleep(3)
+      bootSay("Update check broken. Continuing in 3s...")
+      bootSpinSleep(3)
       return
     end
     if info.err and not info.remoteVer then
-      print("Update check failed: " .. tostring(info.err))
-      print("Continuing boot in 3s...")
-      sleep(3)
+      bootSay("Update check failed: " .. tostring(info.err))
+      bootSay("Continuing boot in 3s...")
+      bootSpinSleep(3)
       return
     end
     if not info.updateAvailable then
-      print("Macaroon OS v" .. tostring(info.localVer) .. " (up to date)")
-      sleep(1)
+      bootSay("Macaroon OS v" .. tostring(info.localVer) .. " (up to date)")
+      bootSpinSleep(1)
       return
     end
-    print("Update available: " .. tostring(info.localVer) .. " -> " .. tostring(info.remoteVer))
+    bootSay("Update available: " .. tostring(info.localVer) .. " -> " .. tostring(info.remoteVer))
     write("Update now? [Y/n] ")
     local ans = read()
     if ans and string.lower(string.sub(ans, 1, 1)) == "n" then
-      print("Skipped. Open Update app later to install.")
-      sleep(0.5)
+      bootSay("Skipped. Open Update app later to install.")
+      bootSpinSleep(0.5)
       return
     end
-    print("Updating...")
+    bootSay("Updating...")
     local okCall, okP, perr = pcall(Updater.perform, info.baseURL, function(path, i, total)
-      print("[" .. i .. "/" .. total .. "] " .. path)
+      bootSay("[" .. i .. "/" .. total .. "] " .. path)
     end)
     if not okCall then
-      print("Update crashed: " .. tostring(okP))
-      print("Continuing boot in 3s...")
-      sleep(3)
+      bootSay("Update crashed: " .. tostring(okP))
+      bootSay("Continuing boot in 3s...")
+      bootSpinSleep(3)
       return
     end
     if not okP then
-      print("Update failed: " .. tostring(perr))
-      print("Continuing boot in 3s...")
-      sleep(3)
+      bootSay("Update failed: " .. tostring(perr))
+      bootSay("Continuing boot in 3s...")
+      bootSpinSleep(3)
       return
     end
-    print("Updated. Rebooting...")
-    sleep(1)
+    bootSay("Updated. Rebooting...")
+    bootSpinSleep(1)
     os.reboot()
   end
   pcall(bootCheck)
-  term.setBackgroundColor(colours.lightBlue)
-  term.clear()
+  if not Boot then
+    term.setBackgroundColor(colours.lightBlue)
+    term.clear()
+  end
+  -- Splash stays up through login when present; login draws its own screen.
 end
 
 -- Secure boot: login gate. Skipped when no accounts exist
@@ -173,6 +219,14 @@ do
       return
     end
   end
+end
+
+-- Hide splash (restore lightBlue clear) right before the desktop.
+if Boot and type(Boot.hide) == "function" then
+  pcall(Boot.hide)
+else
+  term.setBackgroundColor(colours.lightBlue)
+  term.clear()
 end
 
 local ok, err = pcall(Desktop.run, Window, validApps, { user = sessionUser })
