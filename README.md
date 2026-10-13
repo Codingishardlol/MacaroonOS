@@ -2,7 +2,7 @@
 
 A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/) — draggable windows, a Start menu, user accounts, and one-command installs and updates.
 
-![version](https://img.shields.io/badge/version-1.5.2-blue)
+![version](https://img.shields.io/badge/version-1.5.3-blue)
 
 ## Features
 

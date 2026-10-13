@@ -80,10 +80,34 @@ local function writeAll(t)
   return true
 end
 
+local seeded = false
+local function ensureSeed()
+  -- Lua's math.random repeats the same sequence every boot unless
+  -- seeded. Identical account-creation orders would then produce
+  -- identical salts on every machine. Mix wall-clock, CPU clock,
+  -- and computer ID; salts are stored anyway, this is about uniqueness.
+  if seeded then return end
+  seeded = true
+  local s = 0
+  if os.epoch then
+    local ok, e = pcall(os.epoch, "utc")
+    if ok and type(e) == "number" then s = s + e end
+  end
+  if os.time then s = s + (os.time() * 1000) end
+  if os.clock then s = s + math.floor(os.clock() * 1000000) end
+  if os.getComputerID then
+    local ok, id = pcall(os.getComputerID)
+    if ok and type(id) == "number" then s = s + id * 7919 end
+  end
+  math.randomseed(s % 2147483647)
+  math.random()
+  math.random()
+  math.random()
+end
+
 local function newSalt()
   -- 8 random bytes as hex; seeded caller-side where possible.
-  local parts = {}
-  for _ = 1, 8 do
+  local parts = {}  for _ = 1, 8 do
     local b = math.random(0, 255)
     local hi = math.floor(b / 16)
     local lo = b % 16
@@ -114,6 +138,7 @@ function Users.create(name, password)
   end
   local sha = loadSHA()
   if not sha then return false, "sha256 missing" end
+  ensureSeed()
   local salt = newSalt()
   local hash = stretch(sha, salt, password, ROUNDS)
   local t = readAll()

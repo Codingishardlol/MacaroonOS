@@ -143,12 +143,26 @@ local function openSelected()
   end
 end
 
+-- System paths the Files app must never delete or move:
+-- /startup.lua (boot) and everything under /macaroon/ (OS itself).
+-- Viewing and copying them stays allowed (useful for backup).
+local function sysPath(name)
+  local a = normDir(fs.combine(cwd, name))
+  if a == "/startup.lua" or a == "/macaroon" then return true end
+  return string.sub(a, 1, 10) == "/macaroon/"
+end
+
 local function deleteSelected()
   local e = entries[selected]
   if not e then status = "nothing selected" return false end
   if not delArm then
     delArm = true
     status = "click Del again: " .. e
+    return true
+  end
+  if sysPath(e) then
+    delArm = false
+    status = "system file protected"
     return true
   end
   local ok = pcall(fs.delete, fs.combine(cwd, e))
@@ -218,6 +232,10 @@ local function commitRename()
   if newName == "" then status = "empty name" return end
   if newName == orig then status = "unchanged" return end
   if string.find(newName, "/") then status = "no / in name" return end
+  if sysPath(orig) or sysPath(newName) then
+    status = "system file protected"
+    return
+  end
   local src = fs.combine(cwd, orig)
   local dst = fs.combine(cwd, newName)
   if existsSafe(dst) then status = "name exists" return end
