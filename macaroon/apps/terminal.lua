@@ -29,8 +29,13 @@ local function runCommand(win, cmd)
     return
   end
   if not shell then
-    push("no shell API")
-    return
+    -- Startup normally bootstraps this; retry here so the message
+    -- says WHY instead of just "no shell API".
+    local okB, booted, reason = pcall(dofile, "macaroon/shellboot.lua")
+    if not (okB and booted) then
+      push("no shell API (" .. tostring(reason or "bootstrap failed") .. ")")
+      return
+    end
   end
   -- Snapshot _G AND one level of shared API tables: commands run with
   -- full access, so `os.pullEventRaw = ...` mutates the shared os table

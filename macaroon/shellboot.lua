@@ -13,27 +13,32 @@ local function bootstrap()
     return true -- already provided (e.g. launched from a real shell)
   end
   if not fs.exists("/rom/programs/shell.lua") then
-    return false
+    return false, "no rom shell"
   end
   local h = fs.open("/rom/programs/shell.lua", "r")
-  if not h then return false end
+  if not h then return false, "cannot open rom shell" end
   local src = h.readAll()
   h.close()
-  if type(src) ~= "string" then return false end
+  if type(src) ~= "string" then return false, "cannot read rom shell" end
   -- Cut before the REPL driver (`local tArgs = { ... }`); everything
   -- above only DEFINES the API on the local `shell` table.
   local defs = string.match(src, "^(.-)\nlocal tArgs")
-  if not defs then return false end
+  if not defs then return false, "no REPL marker" end
+  -- CC:T's definitions open their require helper via a RELATIVE dofile,
+  -- which cannot resolve without a shell. Absolute-path it (no-op on
+  -- sources that already use an absolute path or a different loader).
+  defs = string.gsub(defs, 'dofile%(%"rom/modules/main/cc/require%.lua"%)',
+    'dofile("/rom/modules/main/cc/require.lua")', 1)
   local t = { multishell = multishell }
   setmetatable(t, { __index = _G })
   -- NOTE: the ROM chunk declares its own `local shell = {}`, so a
   -- pre-made env table would stay empty. Capture the local instead.
   local fn, err = load(defs .. "\nreturn shell", "shell-bootstrap", "t", t)
-  if not fn then return false end
+  if not fn then return false, "load failed" end
   local ok, captured = pcall(fn)
-  if not ok then return false end
+  if not ok then return false, "defs failed" end
   if type(captured) ~= "table" or type(captured.run) ~= "function" then
-    return false
+    return false, "bad api"
   end
   shell = captured
   -- Sane defaults for a parentless shell, then standard aliases.
@@ -43,5 +48,8 @@ local function bootstrap()
   return true
 end
 
-local ok, res = pcall(bootstrap)
-return ok and res == true
+local ok, res, reason = pcall(bootstrap)
+if ok and res == true then
+  return true
+end
+return false, reason
