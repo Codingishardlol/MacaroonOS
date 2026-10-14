@@ -175,23 +175,34 @@ if fs.exists("macaroon/users.lua") then
       print("Accounts kept: " .. table.concat(names, ", "))
     else
       print("")
-      print("Create admin account:")
-      write("Username: ")
-      local name = read()
-      name = string.gsub(name or "", "^%s*(.-)%s*$", "%1")
-      write("Password (min 8): ")
-      local pw1 = read("*")
-      write("Repeat password: ")
-      local pw2 = read("*")
-      if (pw1 or "") ~= (pw2 or "") then
-        print("Passwords differ - no account created.")
-        print("Run installer again or add one later.")
+      write("Create admin account? [Y/n] ")
+      local mk = read()
+      if mk and string.lower(string.sub(mk, 1, 1)) == "n" then
+        print("Skipped. The machine boots straight in until")
+        print("you add an account (Start menu -> Users).")
       else
-        local okC, err = UserLib.create(name, pw1 or "")
-        if okC then
-          print("Account '" .. name .. "' created.")
+        print("Create admin account (leave name empty to skip):")
+        write("Username: ")
+        local name = read()
+        name = string.gsub(name or "", "^%s*(.-)%s*$", "%1")
+        if name == "" then
+          print("Skipped.")
         else
-          print("Account failed: " .. tostring(err))
+          write("Password (min 8): ")
+          local pw1 = read("*")
+          write("Repeat password: ")
+          local pw2 = read("*")
+          if (pw1 or "") ~= (pw2 or "") then
+            print("Passwords differ - no account created.")
+            print("Run installer again or add one later.")
+          else
+            local okC, err = UserLib.create(name, pw1 or "")
+            if okC then
+              print("Account '" .. name .. "' created.")
+            else
+              print("Account failed: " .. tostring(err))
+            end
+          end
         end
       end
     end
