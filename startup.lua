@@ -16,6 +16,11 @@ if not term.isColor or not term.isColor() then
   return
 end
 
+-- Shell API bootstrap: startup isn't launched by a shell, so the
+-- global `shell` table (needed by Terminal, shell.run users) is nil.
+-- Best effort; the OS boots regardless.
+pcall(dofile, "macaroon/shellboot.lua")
+
 -- Boot splash module (optional; boot continues plainly if missing).
 local okBoot, BootMod = pcall(dofile, "macaroon/boot.lua")
 local Boot = nil

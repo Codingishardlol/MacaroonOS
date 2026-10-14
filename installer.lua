@@ -28,6 +28,7 @@ local FILES = {
   "macaroon/login.lua",
   "macaroon/boot.lua",
   "macaroon/crash.lua",
+  "macaroon/shellboot.lua",
   "macaroon/window.lua",
   "macaroon/desktop.lua",
   "macaroon/apps/hello.lua",
