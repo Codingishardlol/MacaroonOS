@@ -16,6 +16,7 @@ return {
   "macaroon/shellboot.lua",
   "macaroon/window.lua",
   "macaroon/desktop.lua",
+  "macaroon/channel.lua",
   "macaroon/apps/hello.lua",
   "macaroon/apps/about.lua",
   "macaroon/apps/update.lua",

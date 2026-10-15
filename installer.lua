@@ -14,8 +14,8 @@ local BASE_URL = "https://raw.githubusercontent.com/Codingishardlol/MacaroonOS/m
 
 -- Paths relative to both BASE_URL and the computer root.
 -- NOTE: keep in sync with macaroon/manifest.lua. Data files
--- (users.dat, settings.dat, update_url.txt) are never listed,
--- so installs/updates never wipe accounts or settings.
+-- (users.dat, settings.dat, update_url.txt, channel.txt) are never
+-- listed, so installs/updates never wipe accounts or settings.
 local FILES = {
   "startup.lua",
   "update.lua",
@@ -31,6 +31,7 @@ local FILES = {
   "macaroon/shellboot.lua",
   "macaroon/window.lua",
   "macaroon/desktop.lua",
+  "macaroon/channel.lua",
   "macaroon/apps/hello.lua",
   "macaroon/apps/about.lua",
   "macaroon/apps/update.lua",
@@ -69,6 +70,30 @@ end
 
 print("Macaroon OS installer")
 print("Source: " .. BASE_URL)
+print("")
+
+-- Release channel: Stable (main branch) or Beta (beta branch).
+-- Asked up front: the choice decides where every file downloads from.
+write("Install Stable or Beta? [S/b] ")
+local chans = read()
+local channel = "stable"
+if chans and string.lower(string.sub(chans, 1, 1)) == "b" then
+  channel = "beta"
+end
+do
+  local branch = (channel == "beta") and "beta" or "main"
+  -- NOTE: Lua patterns have no a|b alternation: match the last segment
+  -- first, then compare it in plain Lua.
+  local root = string.match(BASE_URL, "^(.*)/[^/]+$")
+  if root and root ~= "" then
+    local tail = string.match(BASE_URL, "/([^/]+)$")
+    if tail == "main" or tail == "beta" or tail == "master" then
+      BASE_URL = root
+    end
+  end
+  BASE_URL = BASE_URL .. "/" .. branch
+end
+print("Channel: " .. channel .. " (" .. BASE_URL .. ")")
 print("")
 
 -- 2. Backup existing startup (don't overwrite backup twice)
@@ -153,6 +178,15 @@ do
     h.write(BASE_URL)
     h.close()
     print("Update source saved.")
+  end
+end
+
+-- Remember channel (a data file: never in FILES/manifest, like the URL).
+do
+  local h = fs.open("macaroon/channel.txt", "w")
+  if h then
+    h.write(channel)
+    h.close()
   end
 end
 

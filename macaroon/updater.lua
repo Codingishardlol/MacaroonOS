@@ -112,7 +112,8 @@ local PROTECTED = {
   ["users.dat"] = true, ["settings.dat"] = true,
   ["update_url.txt"] = true, ["crash.log"] = true,
   ["startup.bak"] = true, ["noautoupdate.txt"] = true,
-  ["fails.dat"] = true,
+  ["fails.dat"] = true, ["channel.txt"] = true,
+  [".provisioned"] = true,
 }
 
 -- safePath: validates a manifest/Store path before any write.
@@ -205,6 +206,11 @@ local function loadManifestFromSource(src)
   if type(src) ~= "string" or #src > 16384 then
     return nil, "manifest too big"
   end
+  -- Strip -- comments first: our own manifest documents itself, and
+  -- comment text trips the gates below (hyphens, words like "for").
+  -- Stripping only removes text, so hostile code can hide in comments
+  -- (removed) no better than outside them (still gated below).
+  src = string.gsub(src, "%-%-[^\n]*", "")
   -- Charset gate: a manifest is return { "paths", ... } and nothing else.
   -- Anything outside this alphabet (calls, comments, escapes) is rejected
   -- BEFORE load, so hostile code can neither run nor hang us. Keywords
@@ -346,6 +352,47 @@ function Updater.perform(baseURL, onProgress)
   end
   -- Remember source for next check.
   pcall(Updater.setBaseURL, baseURL)
+  return true
+end
+
+-- Release channel ("stable" = main branch, "beta" = beta branch).
+-- Missing channel lib or file means stable.
+function Updater.getChannel()
+  local ok, Ch = pcall(dofile, "macaroon/channel.lua")
+  if ok and type(Ch) == "table" and type(Ch.get) == "function" then
+    local okG, ch = pcall(Ch.get)
+    if okG and (ch == "beta" or ch == "stable") then return ch end
+  end
+  return "stable"
+end
+
+-- Switch release channel and reinstall that channel's files NOW.
+-- Unconditional: switching reinstalls even when the other channel's
+-- version number is equal or lower (perform has no version gate).
+-- Returns true, or false + err. Never throws.
+function Updater.switchChannel(ch, onProgress)
+  if ch ~= "stable" and ch ~= "beta" then
+    return false, "bad channel (want stable|beta)"
+  end
+  local okC, Ch = pcall(dofile, "macaroon/channel.lua")
+  if not okC or type(Ch) ~= "table" then
+    return false, "channel lib missing"
+  end
+  local okS, saved = pcall(Ch.set, ch)
+  if not okS or not saved then
+    return false, "cannot save channel"
+  end
+  local okB, base = pcall(Ch.baseFor, ch, Updater.getBaseURL())
+  if not okB or type(base) ~= "string" or base == "" then
+    return false, "cannot build channel URL"
+  end
+  local okP, ok, err = pcall(Updater.perform, base, onProgress)
+  if not okP then
+    return false, "switch crashed: " .. tostring(ok)
+  end
+  if not ok then
+    return false, err
+  end
   return true
 end
 

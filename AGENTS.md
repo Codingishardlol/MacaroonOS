@@ -7,8 +7,11 @@
   pass. If you can't run them, say so instead of guessing.
 - Commit to git after each passing milestone. If a change breaks 
   things you can't fix, revert it.
-- Keep going on your own until the milestone is done or you're 
+- Keep going on your own until the milestone is done or you're
   genuinely blocked. Don't ask me to test things for you.
+- Don't end replies with offers like "say the word": if the next step
+  is allowed by the rules in this file, do it, and only stop when a
+  rule requires my approval.
 
 ## Running and testing (verified 2026-10-15, CraftOS-PC v2.8.3)
 - Run command (GUI — boots this OS in the emulator; run from this folder):
@@ -30,21 +33,37 @@
     2>/dev/null | strings | grep BOOT-OK   # expect BOOT-OK:true
   rm -rf "$DATA_DIR"
   ```
-- Test command (one command, ~4 min, exit 0 = all pass):
+- Test commands (run from this folder; exit 0 = all pass):
   ```bash
-  bash tests/test.sh
+  bash tests/test.sh        # full suite (~10 min): T0 syntax gates, T1-T12
+  bash tests/test.sh quick  # quick mode (~20 s clean): syntax + login smoke
+                            # + only the tests covering files changed since
+                            # the last commit (each test tags its files)
+  bash tests/test.sh <name> # one test, e.g. T2b — while fixing a bug,
+                            # rerun only the failing or related test
   ```
   `tests/test.sh` boots the real OS in CraftOS-PC and checks behavior:
-  T0a `luac -p` syntax + T0b `luac5.1 -p` 5.1-subset gate; T1 boot reaches
+  T0a `luac -p` + T0b `luac5.1 -p` 5.1-subset gate; T1 boot reaches
   desktop (no accounts) / login (accounts); T2 correct password logs in,
   wrong password stays locked and records the failure; T3 `R` during
   splash gives the recovery menu (no shell), reboot preserves `users.dat`;
   T4 deleting each of `desktop.lua`, `window.lua`, `login.lua`, `users.dat`
   shuts down with no shell and no open desktop; T5 fresh-install first
   account (with marker); T6 upgrade from 1.7.3 boots normally then adopts
-  the marker; T7 marker deleted but `users.dat` present boots normally.
-  GUI steps use `xdotool` under `xvfb-run` and save proofs to
-  `screenshots/`.
+  the marker; T7 marker deleted but `users.dat` present boots normally;
+  T8 channel get/set/branch logic; T9 installer picks beta; T10 updater
+  pulls the chosen branch; T11 switching back to stable reinstalls even
+  when the version is lower; T12 no channel file means stable.
+  GUI steps use `xdotool` under `xvfb-run`, save proofs to `screenshots/`,
+  and poll (screenshot checks with timeouts) instead of fixed sleeps, so
+  each test finishes as soon as the screen is ready.
+- Never run the full suite after every small edit while fixing — rerun
+  only the failing or related test. Pushing to `beta` needs quick mode
+  plus the changed-files tests green. The full suite runs once, right
+  before promoting to `main`; it is also required when boot-critical or
+  shared files change (`startup.lua`, `shellboot.lua`, `login.lua`,
+  `users.lua`, `updater.lua`, `desktop.lua`, `window.lua`, `manifest.lua`,
+  `installer.lua`) and a push to `main` is next.
 - Setup steps so this can be redone if the Codespace is rebuilt:
   ```bash
   sudo add-apt-repository -y ppa:jackmacwindows/ppa   # CraftOS-PC source (idempotent)
@@ -150,7 +169,9 @@ Tips:
   after the full `tests/` suite passes, plus user approval for
   boot-critical files.
 - Push to `main` ONLY if the full `tests/` suite (`bash tests/test.sh`)
-  passes. Anything failing: fix first, never push a failing state.
+  passes (plus a version bump per the rule below). Push to `beta` freely
+  once quick mode plus the changed-files tests pass — no version bump
+  needed there. Anything failing: fix first, never push a failing state.
 - Never force-push. Before pushing, show `git status --short` and the
   push diff stat; don't ship unknown diffs silently.
 - Version rule: any push changing code installed on computers must bump
