@@ -27,9 +27,11 @@ Read before touching login, user files, the kernel, or boot code.
    salted + stretched (100× SHA-256) with constant-time compare.
 5. **Computer owner with file access** — OUT OF SCOPE. Anyone who can open
    the computer's files can delete the gate (same as every ComputerCraft
-   OS). This stops walk-ups, not owners. Deleting `.provisioned` +
-   `users.dat` together reverts to fresh-copy behavior; document, don't
-   chase.
+   OS). This stops walk-ups, not owners. Known limit (accepted, not
+   fixed): deleting `.provisioned` AND `users.dat` together boots open
+   like a fresh copy — the two states are indistinguishable by design, so
+   no test asserts shutdown there. Each deletion alone DOES shut down
+   (`test.sh` T4d, T7).
 
 ## Sensitive spots (verify against this list on every security change)
 
