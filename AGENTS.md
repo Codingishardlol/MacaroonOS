@@ -57,7 +57,9 @@
   T13 Notepad registered locally, manifest==installer FILES; T14 Notepad
   edits/saves normal files, refuses OS files, close-veto works; T15
   channel switch installs/removes the Notepad registration on the live
-  branches (post-push verification: needs the feature on beta).
+  branches (post-push verification: needs the feature on beta); T16
+  switch with no channel lib (the <=1.7.4 update path) succeeds and
+  installs the lib.
   GUI steps use `xdotool` under `xvfb-run`, save proofs to `screenshots/`,
   and poll (screenshot checks with timeouts) instead of fixed sleeps, so
   each test finishes as soon as the screen is ready.
