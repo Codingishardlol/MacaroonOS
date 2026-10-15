@@ -57,18 +57,27 @@ end
 
 if not fs.exists("macaroon/window.lua") or not fs.exists("macaroon/desktop.lua") then
   fail("Missing /macaroon/window.lua or /macaroon/desktop.lua")
+  -- Fail closed: returning here would drop to a bare CraftOS shell.
+  sleep(1)
+  os.shutdown()
   return
 end
 
 local okW, Window = pcall(dofile, "macaroon/window.lua")
 if not okW or type(Window) ~= "table" then
   fail("window.lua load error: " .. tostring(Window))
+  -- Fail closed: returning here would drop to a bare CraftOS shell.
+  sleep(1)
+  os.shutdown()
   return
 end
 
 local okD, Desktop = pcall(dofile, "macaroon/desktop.lua")
 if not okD or type(Desktop) ~= "table" or type(Desktop.run) ~= "function" then
   fail("desktop.lua load error: " .. tostring(Desktop))
+  -- Fail closed: returning here would drop to a bare CraftOS shell.
+  sleep(1)
+  os.shutdown()
   return
 end
 
@@ -167,6 +176,10 @@ do
   local function bootLogin()
     if not fs.exists("macaroon/login.lua") then return end
     local datExists = fs.exists("macaroon/users.dat")
+    -- Provisioned marker (written by Users.create): a machine that once
+    -- had accounts but now has none was tampered with (users.dat wiped),
+    -- so shut down instead of booting open like a fresh copy.
+    local provisioned = fs.exists("macaroon/.provisioned")
     local hasAccts = false
     if fs.exists("macaroon/users.lua") then
       local okU, UL = pcall(dofile, "macaroon/users.lua")
@@ -175,7 +188,7 @@ do
         hasAccts = okH and has
       end
     end
-    if datExists and not hasAccts then
+    if (datExists or provisioned) and not hasAccts then
       print("Accounts file damaged. Shutting down.")
       sleep(1)
       os.shutdown()
@@ -321,5 +334,8 @@ if not ok then
     end
   else
     fail(tostring(err))
+    -- Fail closed: falling off the end here would drop to a bare shell.
+    sleep(1)
+    os.shutdown()
   end
 end

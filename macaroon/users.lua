@@ -9,6 +9,11 @@ local Users = {}
 local PATH = "macaroon/users.dat"
 local FAILS_PATH = "macaroon/fails.dat"
 local SHA_PATH = "macaroon/sha256.lua"
+-- Provisioned marker: written on first successful account creation.
+-- Lets boot tell "machine that once had accounts" (deleted users.dat =
+-- tamper -> shut down) from a fresh copy (no marker -> boots open).
+-- Never in manifest/install lists: it is local state, like users.dat.
+local PROVISIONED_PATH = "macaroon/.provisioned"
 -- Key stretching: each password goes through this many SHA256 rounds.
 -- ~100 rounds ~= a few seconds on real CC hardware, but makes
 -- brute force 100x more expensive. Stored per account so it stays
@@ -179,6 +184,15 @@ function Users.create(name, password)
   local t = readAll()
   t[name] = { salt = salt, hash = hash, rounds = ROUNDS }
   if not writeAll(t) then return false, "cannot write users file" end
+  -- Best-effort provisioned marker (see PROVISIONED_PATH). Must never
+  -- fail account creation if the marker itself can't be written.
+  pcall(function()
+    local m = fs.open(PROVISIONED_PATH, "w")
+    if m then
+      m.write("provisioned\n")
+      m.close()
+    end
+  end)
   return true
 end
 
