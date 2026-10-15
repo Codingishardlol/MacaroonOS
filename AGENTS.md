@@ -166,9 +166,13 @@ Tips:
   `installer.lua` — need, before any push to `main`: the FULL `tests/`
   suite including the upgrade-from-previous-version case, plus user
   approval. Take a boot screenshot only if the boot screen or UI changed.
-- Auth: pushes use the `GITHUB_TOKEN` env var (`GITHUB_TOKEN=…` prefix).
-  Never print the token and never write it into URLs, configs, or files;
-  the remote URL stays token-free.
+- Auth: pushes must use the saved `gh` token, not the `GITHUB_TOKEN` env
+  var (that one is read-only and fails with 403). Unset `GITHUB_TOKEN`
+  for push commands and use `gh` as the credential helper. Before the
+  first push of a session, check with:
+  `gh api repos/Codingishardlol/MacaroonOS --jq .permissions` (push must
+  be true). Never print the token, and never write it into URLs,
+  configs, or files; the remote URL stays token-free.
 
 
 ## Architecture (for a fresh chat)
