@@ -374,15 +374,49 @@ function Updater.switchChannel(ch, onProgress)
   if ch ~= "stable" and ch ~= "beta" then
     return false, "bad channel (want stable|beta)"
   end
+  -- Prefer the channel lib; fall back to inline file access when it is
+  -- missing (e.g. updated from <=1.7.4, whose updater predated remote
+  -- manifests and therefore never installed channel.lua). The fallback
+  -- heals itself: the beta/stable manifest includes channel.lua, so one
+  -- successful switch installs the lib and later switches use it.
+  local setCh, baseFor = nil, nil
   local okC, Ch = pcall(dofile, "macaroon/channel.lua")
-  if not okC or type(Ch) ~= "table" then
-    return false, "channel lib missing"
+  if okC and type(Ch) == "table" and type(Ch.set) == "function"
+     and type(Ch.baseFor) == "function" then
+    setCh = function(c) return Ch.set(c) end
+    baseFor = function(c, b) return Ch.baseFor(c, b) end
+  else
+    setCh = function(c)
+      if fs.getDir("macaroon/channel.txt") ~= ""
+         and not fs.exists(fs.getDir("macaroon/channel.txt")) then
+        fs.makeDir(fs.getDir("macaroon/channel.txt"))
+      end
+      local h = fs.open("macaroon/channel.txt", "w")
+      if not h then return false end
+      h.write(c)
+      h.close()
+      return true
+    end
+    baseFor = function(c, b)
+      local branch = "main"
+      if c == "beta" then branch = "beta" end
+      b = string.gsub(tostring(b or ""), "^%s*(.-)%s*$", "%1")
+      if string.sub(b, -1) == "/" then b = string.sub(b, 1, -2) end
+      local root = string.match(b, "^(.*)/[^/]+$")
+      if root and root ~= "" then
+        local tail = string.match(b, "/([^/]+)$")
+        if tail == "main" or tail == "beta" or tail == "master" then
+          b = root
+        end
+      end
+      return b .. "/" .. branch
+    end
   end
-  local okS, saved = pcall(Ch.set, ch)
+  local okS, saved = pcall(setCh, ch)
   if not okS or not saved then
     return false, "cannot save channel"
   end
-  local okB, base = pcall(Ch.baseFor, ch, Updater.getBaseURL())
+  local okB, base = pcall(baseFor, ch, Updater.getBaseURL())
   if not okB or type(base) ~= "string" or base == "" then
     return false, "cannot build channel URL"
   end

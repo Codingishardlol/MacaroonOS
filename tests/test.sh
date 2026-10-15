@@ -432,9 +432,10 @@ covers() { # $1 = test fn -> files
     t9) printf '%s\n' installer.lua macaroon/channel.lua;;
     t10|t11) printf '%s\n' macaroon/updater.lua macaroon/channel.lua macaroon/manifest.lua;;
     t12) printf '%s\n' macaroon/channel.lua macaroon/updater.lua;;
+    t16) printf '%s\n' macaroon/updater.lua;;
   esac
 }
-ALL_TESTS="t1a t1b t2a t2b t2c t3 t4a t4b t4c t4d t5 t6 t7 t8 t9 t10 t11 t12"
+ALL_TESTS="t1a t1b t2a t2b t2c t3 t4a t4b t4c t4d t5 t6 t7 t8 t9 t10 t11 t12 t16"
 
 run_full() {
   t0a; t0b
@@ -455,11 +456,26 @@ run_quick() {
 run_name() { # T2b -> t2b
   local n; n=$(echo "$1" | tr 'A-Z' 'a-z')
   case "$n" in
-    t0a|t0b|smoke|t1a|t1b|t2a|t2b|t2c|t3|t4a|t4b|t4c|t4d|t5|t6|t7|t8|t9|t10|t11|t12) "$n";;
+    t0a|t0b|smoke|t1a|t1b|t2a|t2b|t2c|t3|t4a|t4b|t4c|t4d|t5|t6|t7|t8|t9|t10|t11|t12|t16) "$n";;
     *) echo "unknown test: $1 (try: quick, $ALL_TESTS)" >&2; return 2;;
   esac
 }
 
+t16() {
+  echo "=== T16: switch works with no channel lib (<=1.7.4 update path) ==="
+  local D; D=$(mkdata); mkaccount "$D" >/dev/null
+  rm "$D/computer/0/macaroon/channel.lua"
+  [ -f "$D/computer/0/macaroon/channel.lua" ] && { echo "setup failed"; hit 1 "T16 setup"; rm -rf "$D"; return; }
+  timeout -s KILL 120 craftos --directory "$D" --headless --exec \
+    'local Updater=dofile("macaroon/updater.lua"); local ok,err=Updater.switchChannel("beta"); print("SWITCH:"..tostring(ok).." "..tostring(err)); os.shutdown(ok and 0 or 8)' \
+    2>/dev/null | strings | grep -aq "SWITCH:true"; sw=$?
+  chn=$(cat "$D/computer/0/macaroon/channel.txt" 2>/dev/null)
+  [ -f "$D/computer/0/macaroon/channel.lua" ] && healed=0 || healed=1
+  echo "channel=$chn lib-healed=$healed"
+  { [ "$sw" -eq 0 ] && [ "$chn" = "beta" ] && [ "$healed" -eq 0 ]; }
+  hit $? "T16 lib-less switch succeeds and installs the lib"
+  rm -rf "$D"
+}
 if [ $# -eq 0 ]; then
   run_full
 elif [ "$1" = quick ]; then
