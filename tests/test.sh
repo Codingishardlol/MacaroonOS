@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Macaroon OS behavioral test suite — one command:  bash test.sh
+# Macaroon OS behavioral test suite — one command:  bash tests/test.sh
 # Run from the "Macaroon OS" folder. Boots the real OS in CraftOS-PC and
 # checks behavior, not just syntax. Exit 0 = all pass.
 #
@@ -7,7 +7,7 @@
 # headless craftos ignores piped stdin (keys go via xdotool under Xvfb),
 # headless output has terminal control bytes (grep via `strings`).
 set -u
-PROJ="$(cd "$(dirname "$0")" && pwd)"
+PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJ"
 TMPBASE=$(mktemp -d)
 trap 'rm -rf "$TMPBASE"; pkill -9 -x craftos 2>/dev/null || true' EXIT
@@ -55,9 +55,11 @@ print(n)
 EOF
 }
 
-echo "=== T0: syntax (luac -p every Lua file) ==="
+echo "=== T0: syntax (luac -p every Lua file, plus 5.1 subset) ==="
 luac -p startup.lua installer.lua update.lua macaroon/*.lua macaroon/apps/*.lua
-hit $? "T0 luac clean"
+hit $? "T0a luac clean"
+luac5.1 -p startup.lua installer.lua update.lua macaroon/*.lua macaroon/apps/*.lua
+hit $? "T0b lua 5.1 subset clean (CC runs 5.1)"
 
 echo "=== T1a: boot with NO accounts reaches desktop ==="
 D=$(mkdata)
@@ -160,6 +162,47 @@ t4case "macaroon/desktop.lua" "boot failed" "T4a no desktop.lua -> shutdown, no 
 t4case "macaroon/window.lua" "boot failed" "T4b no window.lua -> shutdown, no desktop"
 t4case "macaroon/login.lua" "Login required" "T4c no login.lua -> shutdown, no desktop"
 t4case "macaroon/users.dat" "Accounts file damaged" "T4d no users.dat -> shutdown, no desktop"
+
+echo "=== T5: fresh install — first account creation works ==="
+D=$(mkdata)
+timeout -s KILL 20 craftos --directory "$D" --headless --exec \
+  'local U=dofile("macaroon/users.lua"); local ok=U.create("firstadmin","adminpass123"); local v=U.verify("firstadmin","adminpass123"); print("FRESH ok="..tostring(ok).." verify="..tostring(v).." accounts="..tostring(U.hasAccounts())); os.shutdown(ok and v and 0 or 9)' \
+  2>/dev/null | strings | grep -aq "FRESH ok=true verify=true accounts=true"; setup=$?
+[ -f "$D/computer/0/macaroon/users.dat" ] && dat=0 || dat=1
+[ -f "$D/computer/0/macaroon/.provisioned" ] && marker=0 || marker=1
+{ [ "$setup" -eq 0 ] && [ "$dat" -eq 0 ] && [ "$marker" -eq 0 ]; }
+hit $? "T5 first account created, verified, marker written"
+rm -rf "$D"
+
+echo "=== T6: upgrade from 1.7.3 (accounts, no marker) boots, then has marker ==="
+U173="$TMPBASE/u173"; mkdir -p "$U173"
+git -C "$PROJ" archive origin/main | tar -x -C "$U173"
+D=$(mktemp -d); mkdir -p "$D/computer/0"; cp -r "$U173"/startup.lua "$U173"/macaroon "$D/computer/0/"
+git -C "$PROJ" show origin/main:macaroon/users.lua > "$D/computer/0/macaroon/users.lua"
+timeout -s KILL 20 craftos --directory "$D" --headless --exec \
+  'local U=dofile("macaroon/users.lua"); assert(U.create("olduser","oldpass123")); os.shutdown(0)' \
+  >/dev/null 2>&1
+[ -f "$D/computer/0/macaroon/.provisioned" ] && { echo "upgrade setup leaked a marker"; premark=1; } || premark=0
+cp "$PROJ/macaroon/users.lua" "$D/computer/0/macaroon/users.lua"
+cp "$PROJ/startup.lua" "$D/computer/0/startup.lua"
+timeout -s KILL 12 craftos --directory "$D" --headless >"$TMPBASE/t6.txt" 2>&1; rc=$?
+grep -aq "Password" "$TMPBASE/t6.txt" && pw=0 || pw=1
+{ [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && running=0 || running=1
+sleep 1
+[ -f "$D/computer/0/macaroon/.provisioned" ] && adopted=0 || adopted=1
+{ [ "$premark" -eq 0 ] && [ "$pw" -eq 0 ] && [ "$running" -eq 0 ] && [ "$adopted" -eq 0 ]; }
+hit $? "T6 upgraded boot reaches login, marker adopted (rc=$rc)"
+rm -rf "$D"
+
+echo "=== T7: marker deleted but users.dat present boots normally ==="
+D=$(mkdata); mkaccount "$D" >/dev/null
+rm "$D/computer/0/macaroon/.provisioned"
+timeout -s KILL 12 craftos --directory "$D" --headless >"$TMPBASE/t7.txt" 2>&1; rc=$?
+grep -aq "Password" "$TMPBASE/t7.txt" && pw=0 || pw=1
+{ [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && running=0 || running=1
+{ [ "$pw" -eq 0 ] && [ "$running" -eq 0 ]; }
+hit $? "T7 no marker + accounts present -> login, no shutdown (rc=$rc)"
+rm -rf "$D"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

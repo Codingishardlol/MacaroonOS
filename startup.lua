@@ -194,6 +194,17 @@ do
       os.shutdown()
       return
     end
+    if hasAccts and not provisioned then
+      -- Upgraded install (accounts predate the marker): adopt the
+      -- tamper protection now so a later users.dat wipe shuts down.
+      pcall(function()
+        local m = fs.open("macaroon/.provisioned", "w")
+        if m then
+          m.write("provisioned\n")
+          m.close()
+        end
+      end)
+    end
     if not hasAccts then return end
     local okL, Login = pcall(dofile, "macaroon/login.lua")
     if not okL or type(Login) ~= "table" then return end
