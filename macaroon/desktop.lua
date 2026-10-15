@@ -89,6 +89,25 @@ function Desktop.run(Window, apps, opts)
     end
   end
 
+  -- Close guard: an app may veto closing (e.g. unsaved work) by
+  -- providing canClose() -> false. On veto, the app gets a single
+  -- "close_request" event so it can explain itself (status line);
+  -- a second close attempt while still vetoed... the app decides:
+  -- canClose is consulted on EVERY attempt, so arm-and-confirm
+  -- (first veto arms, second allows) works. No canClose = closable.
+  local function closeBlocked(win)
+    if win.appDef and win.appDef.canClose then
+      local okC, allow = pcall(win.appDef.canClose)
+      if okC and allow == false then
+        if win.appDef.onEvent then
+          pcall(win.appDef.onEvent, win:contentWindow(), "close_request")
+        end
+        return true
+      end
+    end
+    return false
+  end
+
   local function drawWallpaper()
     term.setBackgroundColor(wallpaper)
     term.setTextColor(colours.white)
@@ -273,7 +292,7 @@ function Desktop.run(Window, apps, opts)
           if win:contains(gx, gy) then
             focusWindow(win)
             if win:isCloseButton(gx, gy) then
-              closeWindow(win)
+              if not closeBlocked(win) then closeWindow(win) end
             elseif win:isTitleBar(gx, gy) then
               dragging = win
               dragOffX = gx - win.x
@@ -319,7 +338,9 @@ function Desktop.run(Window, apps, opts)
         startOpen = not startOpen
         drawAll()
       elseif p1 == 211 and #windows > 0 then -- Delete
-        closeWindow(windows[#windows])
+        if not closeBlocked(windows[#windows]) then
+          closeWindow(windows[#windows])
+        end
         drawAll()
       elseif #windows > 0 then
         -- Forward keys to focused window's app

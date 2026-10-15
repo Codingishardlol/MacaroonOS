@@ -68,3 +68,8 @@ drag title bar moves, `X` closes, `F1` Start, `Delete` closes focused.
 - M4 core apps + Terminal + Users + Store — manual (no automated coverage yet).
 - M5 installer + manifest updater — manual.
 - M6 fail-closed boot (missing/damaged files → shutdown) — T4a/b/c/d.
+- M7 release channels (installer S/b prompt, `Updater.switchChannel`,
+  Update/Settings channel options; stable=main, beta=beta) — T8–T12.
+- M8 Notepad app (beta): New/Open/Save/Save-As, filename + `*` header,
+  close-veto on unsaved work, arrow/scroll editing, OS files blocked —
+  T13–T15.

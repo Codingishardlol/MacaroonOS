@@ -46,6 +46,14 @@ Read before touching login, user files, the kernel, or boot code.
   parse only); clamp rounds (1–1000) and file size (16KB); marker
   `.provisioned` written on create, never in manifest.
 - Terminal app: restore globals a command tampers with.
+- Notepad (`macaroon/apps/notepad.lua`): a single `isProtected` gate
+  stands in front of BOTH open and save. Blocked: `startup.lua`,
+  `macaroon` / `macaroon/*` (covers `users.dat`, `.provisioned`,
+  settings), absolute paths, and any `..` traversal. Only user files
+  outside those are readable/writable, via `fs` only, every call in
+  `pcall`; the window manager already `pcall`s `draw`/`onEvent`, so a
+  bug shows "App error", never a shell. A hostile `users.dat` still
+  can't execute through Notepad: it edits text, never `load`s it.
 - Updater/installer `FILES` ≡ `manifest.lua` list; data files never listed.
 
 ## Regression rule (from AGENTS.md)

@@ -53,7 +53,11 @@
   the marker; T7 marker deleted but `users.dat` present boots normally;
   T8 channel get/set/branch logic; T9 installer picks beta; T10 updater
   pulls the chosen branch; T11 switching back to stable reinstalls even
-  when the version is lower; T12 no channel file means stable.
+  when the version is lower; T12 no channel file means stable;
+  T13 Notepad registered locally, manifest==installer FILES; T14 Notepad
+  edits/saves normal files, refuses OS files, close-veto works; T15
+  channel switch installs/removes the Notepad registration on the live
+  branches (post-push verification: needs the feature on beta).
   GUI steps use `xdotool` under `xvfb-run`, save proofs to `screenshots/`,
   and poll (screenshot checks with timeouts) instead of fixed sleeps, so
   each test finishes as soon as the screen is ready.

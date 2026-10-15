@@ -432,9 +432,12 @@ covers() { # $1 = test fn -> files
     t9) printf '%s\n' installer.lua macaroon/channel.lua;;
     t10|t11) printf '%s\n' macaroon/updater.lua macaroon/channel.lua macaroon/manifest.lua;;
     t12) printf '%s\n' macaroon/channel.lua macaroon/updater.lua;;
+    t13) printf '%s\n' startup.lua macaroon/manifest.lua installer.lua macaroon/apps/notepad.lua;;
+    t14) printf '%s\n' macaroon/apps/notepad.lua;;
+    t15) printf '%s\n' macaroon/updater.lua macaroon/channel.lua macaroon/manifest.lua startup.lua macaroon/apps/notepad.lua;;
   esac
 }
-ALL_TESTS="t1a t1b t2a t2b t2c t3 t4a t4b t4c t4d t5 t6 t7 t8 t9 t10 t11 t12"
+ALL_TESTS="t1a t1b t2a t2b t2c t3 t4a t4b t4c t4d t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15"
 
 run_full() {
   t0a; t0b
@@ -446,6 +449,9 @@ run_quick() {
   changed=$(git diff --name-only HEAD; git ls-files --others --exclude-standard | grep -v '^screenshots/' || true)
   [ -z "$changed" ] && return 0
   for t in $ALL_TESTS; do
+    # T15 verifies DEPLOYED branches (needs the feature pushed first),
+    # so it runs in full mode, never in quick.
+    [ "$t" = t15 ] && continue
     while read -r f; do
       [ -z "$f" ] && continue
       if covers "$t" | grep -qxF "$f"; then "$t"; break; fi
@@ -455,9 +461,85 @@ run_quick() {
 run_name() { # T2b -> t2b
   local n; n=$(echo "$1" | tr 'A-Z' 'a-z')
   case "$n" in
-    t0a|t0b|smoke|t1a|t1b|t2a|t2b|t2c|t3|t4a|t4b|t4c|t4d|t5|t6|t7|t8|t9|t10|t11|t12) "$n";;
+    t0a|t0b|smoke|t1a|t1b|t2a|t2b|t2c|t3|t4a|t4b|t4c|t4d|t5|t6|t7|t8|t9|t10|t11|t12|t13|t14|t15) "$n";;
     *) echo "unknown test: $1 (try: quick, $ALL_TESTS)" >&2; return 2;;
   esac
+}
+
+t13() {
+  echo "=== T13: Notepad wired consistently (local, no network) ==="
+  grep -aq "notepad" startup.lua && reg=0 || reg=1
+  [ -f macaroon/apps/notepad.lua ] && fil=0 || fil=1
+  awk '/local FILES = \{/,/^\}/' installer.lua | grep -o '"[^"]*"' | tr -d '"' | sort -u > "$TMPBASE/ifiles.txt"
+  grep -o '"[^"]*"' macaroon/manifest.lua | tr -d '"' | sort -u > "$TMPBASE/manifest.txt"
+  diff -q "$TMPBASE/ifiles.txt" "$TMPBASE/manifest.txt" >/dev/null 2>&1 && same=0 || same=1
+  grep -aq "macaroon/apps/notepad.lua" "$TMPBASE/ifiles.txt" && inl=0 || inl=1
+  echo "registered=$reg file=$fil lists-identical=$same notepad-listed=$inl"
+  { [ "$reg" -eq 0 ] && [ "$fil" -eq 0 ] && [ "$same" -eq 0 ] && [ "$inl" -eq 0 ]; }
+  hit $? "T13 Notepad registered, manifest==installer FILES"
+}
+t14() {
+  echo "=== T14: Notepad edits/saves normal files, refuses OS files ==="
+  local D; D=$(mkdata)
+  H0=$(sha256sum "$D/computer/0/startup.lua" | cut -d" " -f1)
+  timeout -s KILL 30 craftos --directory "$D" --headless --exec \
+    'local function mockWin() local m = { buf = {} }; function m.setCursorPos(x, y) m.cx, m.cy = x, y end; function m.write(s) local y = m.cy or 1; m.buf[y] = (m.buf[y] or "") .. tostring(s) end; function m.clear() m.buf = {} end; function m.setBackgroundColor(c) end; function m.setTextColor(c) end; function m.getSize() return 44, 13 end; return m end
+    local App = dofile("macaroon/apps/notepad.lua")
+    local win = mockWin()
+    App.onEvent(win, "char", "h"); App.onEvent(win, "char", "i")
+    local hdr = mockWin(); App.draw(hdr)
+    local hs = table.concat(hdr.buf, "|"); print("DIRTYHDR:"..tostring(string.find(hs, "*", 1, true) ~= nil))
+    App.onEvent(win, "mouse_click", 1, 40, 13)
+    for c in ("notes.txt"):gmatch(".") do App.onEvent(win, "char", c) end
+    App.onEvent(win, "key", 28)
+    print("SAVED:"..tostring(fs.exists("notes.txt")))
+    App.onEvent(win, "char", "X")
+    print("VETO1:"..tostring(App.canClose()))
+    print("VETO2:"..tostring(App.canClose()))
+    App.onEvent(win, "mouse_click", 1, 15, 13)
+    for c in ("startup.lua"):gmatch(".") do App.onEvent(win, "char", c) end
+    App.onEvent(win, "key", 28)
+    local hdr2 = mockWin(); App.draw(hdr2)
+    print("STILLNOTES:"..tostring(string.find(table.concat(hdr2.buf, "|"), "notes.txt", 1, true) ~= nil))
+    App.onEvent(win, "mouse_click", 1, 40, 13)
+    for c in ("macaroon/evil.lua"):gmatch(".") do App.onEvent(win, "char", c) end
+    App.onEvent(win, "key", 28)
+    print("SAVEREFUSED:"..tostring(not fs.exists("macaroon/evil.lua")))
+    print("CLEANVETO:"..tostring((function() local A2 = dofile("macaroon/apps/notepad.lua"); return A2.canClose() end)()))
+    os.shutdown(0)' \
+    >"$TMPBASE/t14.txt" 2>&1
+  s=$(strings "$TMPBASE/t14.txt")
+  echo "$s" | grep -aq "DIRTYHDR:true" && a=0 || a=1
+  echo "$s" | grep -aq "SAVED:true" && b=0 || b=1
+  echo "$s" | grep -aq "VETO1:false" && c=0 || c=1
+  echo "$s" | grep -aq "VETO2:true" && d=0 || d=1
+  echo "$s" | grep -aq "SAVEREFUSED:true" && e=0 || e=1
+  echo "$s" | grep -aq "STILLNOTES:true" && oo=0 || oo=1
+  echo "$s" | grep -aq "CLEANVETO:true" && f=0 || f=1
+  [ "$(cat "$D/computer/0/notes.txt" 2>/dev/null)" = "hi" ] && content=0 || content=1
+  H1=$(sha256sum "$D/computer/0/startup.lua" | cut -d" " -f1)
+  [ "$H0" = "$H1" ] && intact=0 || intact=1
+  echo "hdr=$a saved=$b veto=$c/$d openref=$oo saveref=$e clean=$f content=$content intact=$intact"
+  { [ "$a" -eq 0 ] && [ "$b" -eq 0 ] && [ "$c" -eq 0 ] && [ "$d" -eq 0 ] && [ "$oo" -eq 0 ] && [ "$e" -eq 0 ] && [ "$f" -eq 0 ] && [ "$content" -eq 0 ] && [ "$intact" -eq 0 ]; }
+  hit $? "T14 edit/save works, OS files refused, veto works"
+  rm -rf "$D"
+}
+t15() {
+  echo "=== T15: Stable->Beta installs Notepad, back removes it ==="
+  local D; D=$(mkdata); mkaccount "$D" >/dev/null
+  timeout -s KILL 120 craftos --directory "$D" --headless --exec \
+    'local Updater=dofile("macaroon/updater.lua"); local ok,err=Updater.switchChannel("beta"); print("SWITCH:"..tostring(ok)); os.shutdown(ok and 0 or 8)' \
+    2>/dev/null | strings | grep -aq "SWITCH:true"; sw1=$?
+  grep -aq "notepad" "$D/computer/0/startup.lua" 2>/dev/null && reg1=0 || reg1=1
+  [ -f "$D/computer/0/macaroon/apps/notepad.lua" ] && fil1=0 || fil1=1
+  timeout -s KILL 120 craftos --directory "$D" --headless --exec \
+    'local Updater=dofile("macaroon/updater.lua"); local ok,err=Updater.switchChannel("stable"); print("SWITCH:"..tostring(ok)); os.shutdown(ok and 0 or 8)' \
+    2>/dev/null | strings | grep -aq "SWITCH:true"; sw2=$?
+  grep -aq "notepad" "$D/computer/0/startup.lua" 2>/dev/null && reg2=1 || reg2=0
+  echo "to-beta: sw=$sw1 reg=$reg1 file=$fil1 | to-stable: sw=$sw2 unregistered=$reg2"
+  { [ "$sw1" -eq 0 ] && [ "$reg1" -eq 0 ] && [ "$fil1" -eq 0 ] && [ "$sw2" -eq 0 ] && [ "$reg2" -eq 0 ]; }
+  hit $? "T15 channel switch installs/removes Notepad registration"
+  rm -rf "$D"
 }
 
 if [ $# -eq 0 ]; then

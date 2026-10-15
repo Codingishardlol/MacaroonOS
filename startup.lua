@@ -90,6 +90,7 @@ local apps = {
   { name = "Update", path = "macaroon/apps/update.lua" },
   { name = "Users", path = "macaroon/apps/users.lua" },
   { name = "Store", path = "macaroon/apps/store.lua" },
+  { name = "Notepad", path = "macaroon/apps/notepad.lua" },
 }
 
 -- Filter out missing apps so one bad file can't break boot
