@@ -2,7 +2,7 @@
 
 A desktop for your ComputerCraft computer.
 
-![Macaroon OS booting](screenshots/macaroon-boot.png)
+![Macaroon OS booting](assets/macaroon-boot.png)
 
 Macaroon OS turns an Advanced Computer into a small Windows-style desktop:
 draggable windows, a Start menu, user accounts, and apps like Files, Terminal,
