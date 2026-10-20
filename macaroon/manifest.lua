@@ -25,4 +25,5 @@ return {
   "macaroon/apps/files.lua",
   "macaroon/apps/settings.lua",
   "macaroon/apps/terminal.lua",
+  "macaroon/apps/notepad.lua",
 }

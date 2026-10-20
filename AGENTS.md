@@ -1,243 +1,204 @@
-# ComputerCraft OS project
+# Macaroon OS — agent guide
 
-## How to work
-- Work one milestone at a time from SPEC.md. Don't start the next 
-  milestone until the current one passes its tests.
-- After every change, run the tests. Never say you're done until they 
-  pass. If you can't run them, say so instead of guessing.
-- Commit to git after each passing milestone. If a change breaks 
-  things you can't fix, revert it.
-- Keep going on your own until the milestone is done or you're
-  genuinely blocked. Don't ask me to test things for you.
-- Don't end replies with offers like "say the word": if the next step
-  is allowed by the rules in this file, do it, and only stop when a
-  rule requires my approval.
+A Windows-style desktop OS for ComputerCraft: Tweaked. Repo root == computer
+root (`/`), so paths in the repo are paths on the computer.
 
-## Running and testing (verified 2026-10-15, CraftOS-PC v2.8.3)
-- Run command (GUI — boots this OS in the emulator; run from this folder):
-  ```bash
-  DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
-  cp startup.lua "$DATA_DIR/computer/0/"
-  cp -r macaroon "$DATA_DIR/computer/0/"
-  craftos --directory "$DATA_DIR"   # interactive GUI, close window to quit
-  rm -rf "$DATA_DIR"
-  ```
-  Headless smoke (same boot, no GUI; the desktop loop never exits on its
-  own, so the timeout kill with exit 137 is expected):
-  ```bash
-  DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
-  cp startup.lua "$DATA_DIR/computer/0/"
-  cp -r macaroon "$DATA_DIR/computer/0/"
-  timeout -s KILL 10 craftos --directory "$DATA_DIR" --headless \
-    --exec 'print("BOOT-OK:" .. tostring(fs.exists("startup.lua")))' \
-    2>/dev/null | strings | grep BOOT-OK   # expect BOOT-OK:true
-  rm -rf "$DATA_DIR"
-  ```
-- Test commands (run from this folder; exit 0 = all pass):
-  ```bash
-  bash tests/test.sh        # full suite (~10 min): T0 syntax gates, T1-T12
-  bash tests/test.sh quick  # quick mode (~20 s clean): syntax + login smoke
-                            # + only the tests covering files changed since
-                            # the last commit (each test tags its files)
-  bash tests/test.sh <name> # one test, e.g. T2b — while fixing a bug,
-                            # rerun only the failing or related test
-  ```
-  `tests/test.sh` boots the real OS in CraftOS-PC and checks behavior:
-  T0a `luac -p` + T0b `luac5.1 -p` 5.1-subset gate; T1 boot reaches
-  desktop (no accounts) / login (accounts); T2 correct password logs in,
-  wrong password stays locked and records the failure; T3 `R` during
-  splash gives the recovery menu (no shell), reboot preserves `users.dat`;
-  T4 deleting each of `desktop.lua`, `window.lua`, `login.lua`, `users.dat`
-  shuts down with no shell and no open desktop; T5 fresh-install first
-  account (with marker); T6 upgrade from 1.7.3 boots normally then adopts
-  the marker; T7 marker deleted but `users.dat` present boots normally;
-  T8 channel get/set/branch logic; T9 installer picks beta; T10 updater
-  pulls the chosen branch; T11 switching back to stable reinstalls even
-  when the version is lower; T12 no channel file means stable; T16
-  switch with no channel lib (the <=1.7.4 update path) succeeds and
-  installs the lib.
-  GUI steps use `xdotool` under `xvfb-run`, save proofs to `screenshots/`,
-  and poll (screenshot checks with timeouts) instead of fixed sleeps, so
-  each test finishes as soon as the screen is ready.
-- Never run the full suite after every small edit while fixing — rerun
-  only the failing or related test. Pushing to `beta` needs quick mode
-  plus the changed-files tests green. The full suite runs once, right
-  before promoting to `main`; it is also required when boot-critical or
-  shared files change (`startup.lua`, `shellboot.lua`, `login.lua`,
-  `users.lua`, `updater.lua`, `desktop.lua`, `window.lua`, `manifest.lua`,
-  `installer.lua`) and a push to `main` is next.
-- Setup steps so this can be redone if the Codespace is rebuilt:
-  ```bash
-  sudo add-apt-repository -y ppa:jackmacwindows/ppa   # CraftOS-PC source (idempotent)
-  sudo apt-get update -qq
-  sudo apt-get install -y craftos-pc xvfb scrot
-  craftos --version   # CraftOS-PC v2.8.3
-  scrot --version     # scrot version 1.10
-  ```
-  Installed here: `craftos-pc 1:2.8.3-noble2` + `craftos-pc-data`,
-  `xvfb 2:21.1.12-1ubuntu1.8`, `scrot 1.10-1build2` (`imagemagick` is
-  present as a fallback screenshot tool).
+Read this file first. Then open only the scoped doc you need.
 
-## UI work
-- After any change to how the screen looks, run CraftOS-PC under 
-  xvfb-run, take a screenshot, and look at it before saying you're done.
-- Check: text isn't cut off or overlapping, colors are readable, 
-  elements line up, nothing draws outside its box.
-- Screen size is 51x19 characters. Use the palette in SPEC.md.
-- Save screenshots in screenshots/. Fix what you see and re-screenshot.
-- Verified screenshot recipe (run from this folder; produces
-  `screenshots/macaroon-boot.png`, proof the OS boots visibly):
-  ```bash
-  DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
-  cp startup.lua "$DATA_DIR/computer/0/"
-  cp -r macaroon "$DATA_DIR/computer/0/"
-  export DATA_DIR
-  xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
-  craftos --directory "$DATA_DIR" &
-  CPID=$!
-  sleep 15   # splash (~2s) + update check + login skip + desktop
-  scrot screenshots/macaroon-boot.png
-  kill $CPID; sleep 1; kill -9 $CPID 2>/dev/null || true
-  '
-  rm -rf "$DATA_DIR"
-  ```
-  Notes: `scrot` syntax is `scrot <file>` (`-d` takes a delay in
-  seconds, so `scrot -d <file>` fails). ALSA `cannot find card '0'`
-  warnings on stderr are harmless (no sound card); hide with
-  `2>/dev/null`. Reference shots in this folder: `craftos-screenshot.png`
-  (emulator sanity: `HELLO-FROM-CODESPACE` / `GUI-PROOF-12345` on a
-  CraftOS prompt) and `screenshots/macaroon-boot.png` (this OS booted:
-  splash + `Macaroon` taskbar with clock).
+## Read next
 
-## Security
-- Rules are in THREAT_MODEL.md. Read it before touching login, 
-  user files, the kernel, or boot code.
-- Every security bug that gets fixed gets a regression test that 
-  stays in the test suite and runs every time.
-- Red-team subagents must produce a working exploit script that runs 
-  in the emulator. No demonstrated exploit, no finding.
-- After any security-related change, rerun ALL old exploit tests to 
-  make sure nothing was reopened.
+| File | Use it for |
+| --- | --- |
+| `SPEC.md` | As-built behavior: boot, login, apps, updates |
+| `THREAT_MODEL.md` | Assets, attackers, security invariants. Read before auth/boot/update/Notepad work |
+| `macaroon/AGENTS.md` | OS code: app contract, Lua 5.1 limits, manifest/installer coupling |
+| `tests/AGENTS.md` | Test harness, adding tests, toolchain setup |
+| `STATE.md` | Current version, branch, working tree, next step. Update it when state changes |
+| `MILESTONES.md` | Milestone history and status |
 
-## CraftOS-PC setup notes (moved from base AGENTS.md, verified 2026-10-15)
+## Execution contract
 
-Headless text mode (`--headless`) prints the terminal as plain text to
-stdout. It stays in the interactive shell afterwards, so every test
-invocation **must** end with `os.shutdown([code])` — the code becomes
-the process exit code. Without it the command hangs until killed
-(exit 137).
+Your job is to finish the task, not to start it. A plan, a diagnosis, or one
+edited file is not completion.
+
+### Loop
+
+1. Inspect the relevant files and `STATE.md`.
+2. Write a short plan (3–6 bullets) and the files you expect to touch.
+3. Execute the plan. Keep going through implementation and verification.
+4. Verify with the cheapest relevant test, then the broader suite this file
+   requires.
+5. Commit when the milestone passes.
+6. Update `STATE.md` and report outcome, verification, commit, and remaining
+   risk.
+
+### Definition of done
+
+A task is done only when:
+
+- the behavior is implemented
+- relevant tests pass, or the report says exactly which could not run and why
+- docs/`STATE.md` are updated when behavior or state changed
+- the change is committed (unless the user said not to commit)
+- the final message states what changed and how it was verified
+
+### Keep going
+
+Continue until the definition of done is met or a hard blocker stops you.
+Do not stop because:
+
+- you finished analysis
+- you finished one file
+- the next step is large — break it down and continue
+- you want to ask whether to proceed
+- you want to offer "next steps"
+
+Do all unblocked work before stopping.
+
+### Hard blockers
+
+Stop only for:
+
+- an irreversible or destructive action that needs approval
+- a missing credential, access, or file only the user can provide
+- a requirement ambiguity where two implementations would produce materially
+  different results
+- an explicit approval gate in this file
+
+When blocked, state:
+
+1. the exact blocker
+2. what you tried
+3. the smallest action needed from the user
+4. what remains unblocked and can still be done
+
+Otherwise: decide, state your assumption, and proceed.
+
+### Never
+
+- ask the user to run a test you can run
+- claim done without verification
+- silently narrow the scope
+- end with "I can…", "let me know", or "say the word"
+- rewrite unrelated code just to make a test pass
+- commit a failing state
+
+## Project rules
+
+- Work one milestone at a time from `SPEC.md` and `STATE.md`. Don't start the
+  next milestone until the current one passes its tests.
+- Before editing, say which files you expect to touch.
+- If a change breaks things and you can't fix it, revert it rather than leaving
+  the tree broken.
+- The user is not the test runner. Run the tests yourself.
+
+## Task tracking and context
+
+- `STATE.md` is the handoff file: current goal, done, next, blockers. Read it
+  at session start and update it before the final report.
+- Keep a short checklist for multi-step work. Cross items off as they complete.
+- Don't paste large files into the prompt. Use `grep`/`read` ranges and let
+  tools fetch the details.
+- Use subagents for exploration and bulk reading; ask for a short summary, not
+  a full report.
+- Keep decisions in files (`SPEC.md`, `STATE.md`, tests), not only in chat.
+- When context gets heavy, write a handoff summary and start a fresh session.
+
+## Commands
+
+Run from the repo root.
 
 ```bash
-# inline test, exit 0
-timeout 15 craftos --headless --exec 'print("EXEC-HELLO-67890"); os.shutdown(0)' 2>/dev/null | strings | tail -n 5
-echo "exit:$?"   # 0
+bash tests/test.sh          # full suite (~10 min)
+bash tests/test.sh quick    # syntax + login smoke + changed-file tests
+bash tests/test.sh T14      # one test
+```
 
-# script-file test
-cat > /tmp/headless_test_script.lua <<'EOF'
-print("SCRIPT-MODE-OK")
-assert(2+2 == 4, "math broke")
-print("ALL-TESTS-PASSED")
-os.shutdown(0)
-EOF
-timeout 15 craftos --headless --script /tmp/headless_test_script.lua 2>/dev/null | strings | tail -n 5
-echo "exit:$?"   # 0
+Boot in the emulator (GUI):
 
-# exit-code propagation
-timeout 15 craftos --headless --exec 'os.shutdown(42)' >/dev/null 2>&1; echo "exit:$?"   # 42
-
-# isolated data dir (recommended so tests never touch ~/.local/share/craftos-pc)
-DATA_DIR=$(mktemp -d)
-mkdir -p "$DATA_DIR/computer/0"
-timeout 15 craftos --directory "$DATA_DIR" --headless --exec 'print("ISOLATED-TEST-OK"); os.shutdown(0)' 2>/dev/null | strings | grep ISOLATED
+```bash
+DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
+cp startup.lua "$DATA_DIR/computer/0/"
+cp -r macaroon "$DATA_DIR/computer/0/"
+craftos --directory "$DATA_DIR"
 rm -rf "$DATA_DIR"
 ```
 
-Tips:
+Headless boot smoke (the desktop loop never exits, so the kill is expected):
 
-- Always wrap in `timeout 15 ...`; a missing `os.shutdown()` hangs forever.
-- Pipe through `strings`: headless output has terminal control bytes and
-  a typing animation of the MOTD; grep for your marker.
-- `2>/dev/null` hides the harmless ALSA warnings.
-- `--cli` (ncurses) and `--raw` exist but are not needed; `--headless`
-  is the documented CI mode. Pattern for real suites (per CraftOS-PC
-  docs): `craftos --directory "$DATA_DIR" --headless --exec
-  'shell.run("test/mcfly.lua test"); os.shutdown()'`.
+```bash
+DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
+cp startup.lua "$DATA_DIR/computer/0/"
+cp -r macaroon "$DATA_DIR/computer/0/"
+timeout -s KILL 10 craftos --directory "$DATA_DIR" --headless \
+  --exec 'print("BOOT-OK:" .. tostring(fs.exists("startup.lua")))' \
+  2>/dev/null | strings | grep BOOT-OK   # expect BOOT-OK:true
+rm -rf "$DATA_DIR"
+```
 
+Toolchain setup is in `tests/AGENTS.md`.
 
-## Git and GitHub
-- Remote: `origin` = `https://github.com/Codingishardlol/MacaroonOS`.
-  Local `main` tracks `origin/main` and stays equal to it; all work
-  happens on branches (currently `boot-hardening`). Merge to `main` only
-  after the full `tests/` suite passes, plus user approval for
-  boot-critical files.
-- Push to `main` ONLY if the full `tests/` suite (`bash tests/test.sh`)
-  passes (plus a version bump per the rule below). Push to `beta` freely
-  once quick mode plus the changed-files tests pass — no version bump
-  needed there. Anything failing: fix first, never push a failing state.
-- Never force-push. Before pushing, show `git status --short` and the
-  push diff stat; don't ship unknown diffs silently.
-- Version rule: any push changing code installed on computers must bump
-  `macaroon/version.lua` AND the README badge in the same commit.
-  Non-boot changes: patch bump (agent chooses). Boot-critical changes:
-  the user chooses the number.
-- A pushed update that turns out broken gets undone with `git revert`
-  (never rewrite history); the fix ships as a new version, bumped so
-  installed computers pick it up.
-- Boot-critical files — `startup.lua`, `macaroon/shellboot.lua`,
+## Verification
+
+- **UI changes:** run CraftOS-PC under `xvfb-run`, take a screenshot, and look
+  at it before saying you're done. Screen is 51x19; use the palette in
+  `SPEC.md`. Save proofs in `screenshots/`.
+- **Security changes:** read `THREAT_MODEL.md`, add a regression test, and
+  rerun the old exploit tests.
+- **Boot-critical files:** `startup.lua`, `macaroon/shellboot.lua`,
   `macaroon/login.lua`, `macaroon/users.lua`, `macaroon/updater.lua`,
   `macaroon/desktop.lua`, `macaroon/window.lua`, `macaroon/manifest.lua`,
-  `installer.lua` — need, before any push to `main`: the FULL `tests/`
-  suite including the upgrade-from-previous-version case, plus user
-  approval. Take a boot screenshot only if the boot screen or UI changed.
-- Auth: pushes must use the saved `gh` token, not the `GITHUB_TOKEN` env
-  var (that one is read-only and fails with 403). Unset `GITHUB_TOKEN`
-  for push commands and use `gh` as the credential helper. Before the
-  first push of a session, check with:
-  `gh api repos/Codingishardlol/MacaroonOS --jq .permissions` (push must
-  be true). Never print the token, and never write it into URLs,
-  configs, or files; the remote URL stays token-free.
+  `installer.lua`. Before pushing these to `main`: full suite + user approval.
 
+## Git and release
 
-## Architecture (for a fresh chat)
-- Code vs data: `macaroon/manifest.lua` (22 code paths) is the updater's
-  source of truth; `installer.lua` hardcodes the identical `FILES` list
-  as bootstrap (it can't fetch the manifest before knowing what to
-  fetch). Keep the two lists identical. Data files (`users.dat`,
-  `settings.dat`, `update_url.txt`, `.provisioned`, `fails.dat`) are
-  NEVER in either list, so installs/updates keep accounts.
-- `macaroon/version.lua` (`{version="x.y.z"}`) + the README badge
-  (`.../badge/version-x.y.z-blue`) bump together in any code-shipping
-  commit; the updater compares against `version.lua`.
-- Updater: `Updater.check()` returns `{localVer, remoteVer,
-  updateAvailable, err, baseURL}`; `Updater.perform(baseURL,
-  progressFn)` staged-installs. Triggered by: reboot prompt (explicit
-  `y` required), the Update app (Check → Install), or the `update`
-  shell command. HTTPS-only, manifest path allowlist (no `..`, no
-  data-file overwrites), 256KB/file cap, offline never blocks boot.
-- Apps: `macaroon/apps/*.lua`, each returns `{title, width, height,
-  draw(win), onEvent}`; register in `startup.lua` + both file lists.
-  `draw`/`onEvent` use only `win.*` and must never throw.
-- Lua/CC constraints: Lua 5.1 subset only — no `goto`, no `//`, no
-  bitwise ops (`& | ~ << >>`); colours via `colours.*` names only; every
-  `http.get` wrapped in `pcall`.
-- Syntax gates (`T0` in `tests/`): `luac -p` plus `luac5.1 -p` so code
-  stays within the Lua 5.1 subset ComputerCraft runs. These catch typos
-  only. The real proof is behavior passing in the emulator via `tests/`.
+- `origin` is `https://github.com/Codingishardlol/MacaroonOS`.
+- Local `main` tracks `origin/main` and stays equal to it. All work happens on
+  branches; use the branch named in `STATE.md`.
+- Push `beta` after quick mode plus changed-file tests pass. Push `main` only
+  after the full suite passes and boot-critical changes have user approval.
+- Never force-push. Before pushing, show `git status --short` and the push
+  diff stat; don't ship unknown diffs.
+- Version rule: any push that changes code installed on computers must bump
+  `macaroon/version.lua` **and** the README badge in the same commit.
+  Non-boot changes: patch bump chosen by the agent. Boot-critical changes:
+  the user chooses the number.
+- A broken released update is undone with `git revert` (never rewrite
+  history); the fix ships as a new, bumped version.
+- Pushes must use the saved `gh` token, not the read-only `GITHUB_TOKEN` env
+  var. Unset `GITHUB_TOKEN` for push commands. Never print the token or write
+  it into URLs/configs/files.
 
+## Architecture map
+
+- **Boot:** `startup.lua` → colour check → `shellboot.lua` → splash/recovery
+  (`boot.lua`) → login (`login.lua` + `users.lua`) → update check →
+  desktop (`desktop.lua` + `window.lua`). Fail-closed paths shut down; they
+  never fall through to a shell.
+- **Accounts:** `macaroon/users.lua` stores salted/stretched hashes in
+  `macaroon/users.dat`; `macaroon/.provisioned` marks a machine that has had
+  accounts; `macaroon/fails.dat` records persistent failures.
+- **Desktop:** `macaroon/desktop.lua` owns the event loop, windows, taskbar,
+  and Start menu; `macaroon/window.lua` handles drag/focus/close; each app is
+  `macaroon/apps/*.lua`.
+- **Updates:** `macaroon/updater.lua` reads `macaroon/manifest.lua` and
+  compares `macaroon/version.lua`. `installer.lua` duplicates the `FILES`
+  list as bootstrap; the two lists must stay identical.
+- **Channels:** `macaroon/channel.lua` stores stable/beta; stable = `main`,
+  beta = `beta`.
+- **Data files** (`users.dat`, `settings.dat`, `update_url.txt`,
+  `.provisioned`, `fails.dat`) are never in either file list, so installs and
+  updates keep accounts and settings.
 
 ## Subagents
-- Before starting any milestone, list its subtasks and mark which are 
-  independent. If two or more are independent, launch them as parallel 
-  subagents in a single step instead of one at a time.
-- Each subagent owns specific files and never edits files outside them 
-  (for example: one on macaroon/apps/files.lua, another on 
-  macaroon/apps/settings.lua). Shared files (startup.lua, boot.lua, 
-  login.lua, users.lua, desktop.lua) are edited only by the main agent.
-- Good subagent jobs: running the test suite and summarizing failures, 
-  red-team exploit attempts against the OS in the emulator, taking and 
-  reviewing screenshots, building separate apps, researching CC:Tweaked 
-  APIs.
-- Give each subagent a self-contained task and ask for a short summary 
-  back, not a full report.
-- After subagents finish, the main agent runs the full test suite before 
-  committing.
+
+- Split a milestone into subtasks first. Independent tasks can run as parallel
+  subagents in one step.
+- Each subagent owns specific files and never edits outside them. Shared boot
+  files (`startup.lua`, `boot.lua`, `login.lua`, `users.lua`, `desktop.lua`)
+  are edited only by the main agent.
+- Good subagent jobs: exploration, running the suite and summarizing failures,
+  red-team exploits in the emulator, screenshots, separate apps, CC:Tweaked
+  API research.
+- Give each subagent a self-contained task and ask for a short summary, not a
+  full report. The main agent runs the suite and commits after they finish.

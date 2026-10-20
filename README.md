@@ -1,119 +1,163 @@
 # Macaroon OS
 
-A Windows-style desktop OS for [ComputerCraft: Tweaked](https://www.tweaked.cc/) — draggable windows, a Start menu, user accounts, and one-command installs and updates.
+A desktop for your ComputerCraft computer.
 
-![version](https://img.shields.io/badge/version-1.7.6-blue)
+![Macaroon OS booting](screenshots/macaroon-boot.png)
 
-## Features
+Macaroon OS turns an Advanced Computer into a small Windows-style desktop:
+draggable windows, a Start menu, user accounts, and apps like Files, Terminal,
+and Notepad. Install it with one command; it updates itself from then on.
 
-- 🖥️ Desktop with draggable, focusable windows and a taskbar clock
-- 🚀 One-command install (`wget run ...`) with auto-boot on every reboot
-- 🔄 Self-updater: boot-time check, Update app, or `update` command — never a reinstall
-- 🔐 User accounts with salted, stretched password hashes + login gate
-- 💀 Graceful crash screen with error log and auto-reboot
-- 🛡️ Hardened updates: HTTPS-only, path-allowlisted, staged, default-no
-- 📁 Built-in apps: Files, Terminal, Settings, Users, Store
+![version](https://img.shields.io/badge/version-1.7.8-blue)
 
-## Requirements
+## What you get
 
-- An **Advanced Computer** (colour + mouse support)
-- ComputerCraft: Tweaked with the HTTP API enabled
+- A desktop with draggable, focusable windows and a taskbar clock
+- A Start menu with Files, Terminal, Notepad, Settings, Users, Store, and Update
+- User accounts with a login screen
+- A self-updater — no reinstalling for every release
+- A crash screen that tells you what went wrong and reboots
+- A recovery option that keeps your accounts
+
+## What you need
+
+- An **Advanced Computer** (colour and mouse support)
+- **ComputerCraft: Tweaked** with the HTTP API enabled
+- Internet access on the computer for install and updates
 
 ## Install
 
-On the computer, run:
+On the ComputerCraft computer, run:
 
 ```
 wget run https://raw.githubusercontent.com/Codingishardlol/MacaroonOS/main/installer.lua
 ```
 
-The installer downloads everything to `/`, backs up your old `startup.lua` to `startup.bak`, asks you to create an admin account, then reboots into Macaroon OS. Because CraftOS runs `/startup.lua` on every boot, the OS opens automatically from then on.
+The installer downloads the OS, backs up your existing `startup.lua` to
+`startup.bak`, asks you to create an admin account, then reboots.
 
-> Prefer pastebin? Upload `installer.lua` there and use `pastebin run <code>` instead.
+That's it. Macaroon OS starts automatically on every boot from then on.
+
+> Prefer pastebin? Upload `installer.lua` there and use `pastebin run <code>`.
+
+## First boot
+
+If you created an account during install, you'll see the login screen:
+
+1. Click your user tile (or use ↑/↓).
+2. Type your password.
+3. Press Enter.
+
+If the computer has no accounts, it boots straight to the desktop.
+
+`Ctrl+T` is disabled at every screen. To use a shell, open the **Terminal** app
+after logging in.
+
+## Using it
+
+| Action | How |
+| --- | --- |
+| Open the Start menu | `F1` or click **Start** |
+| Focus a window | Click it |
+| Move a window | Drag its title bar |
+| Close a window | Click `X` or press `Delete` |
+| Open a shell | Start → **Terminal** |
+| Lock the computer | Start → **Lock** |
+
+### Apps
+
+| App | What it does |
+| --- | --- |
+| Files | Browse, view, copy, rename, create, and delete files |
+| Terminal | Run shell commands in a window |
+| Notepad | Edit, open, and save your own text files |
+| Settings | Change wallpaper, clock format, updates, and channel |
+| Users | Add or remove users and change passwords |
+| Store | Download individual apps from the project manifest |
+| Update | Check for and install OS updates |
+| Hello / About | Small sample apps |
+
+Notepad shortcuts: `F2` save, `F3` open, `F4` new, `F5` save as. Notepad will
+not open or overwrite the OS's own files.
 
 ## Updating
 
-Bump-free updates — pick any one:
+You can update in three ways:
 
-1. **Reboot** and answer `Update 1.6.1 -> 1.7.0? [y/N]` when prompted (explicit yes required).
-2. **Start → Update** → `[ Check ]` → `[ Install ]`, then reboot.
-3. Open the Terminal app and run `update` (Ctrl+T is swallowed by design, so the Terminal app is the shell).
+1. **On reboot** — answer `y` when the update prompt appears.
+2. **Update app** — Start → Update → `[ Check ]` → `[ Install ]`.
+3. **Terminal** — run `update`.
 
-The updater only replaces code files. Your accounts (`users.dat`), settings, and update source are never touched. Updates never fail silently or block boot when offline.
+Updates replace code only. Your accounts, settings, and update source stay
+untouched. If you're offline, the update is skipped and boot continues.
 
-## Apps
+### Stable or beta
 
-| App | What it does |
-| --- | ------------ |
-| Files | Browse, open/view text, copy, rename, create, delete (two-step confirm) |
-| Terminal | Real shell inside a window (`help`, `list`, `lua`…) |
-| Settings | Wallpaper colour, 12/24h clock, auto-update toggle — applied live |
-| Users | Add/remove users, change passwords (last account is protected) |
-| Store | Download individual apps from the repo manifest |
-| Update | Check for and install OS updates |
-| Hello / About | Samples |
+The **stable** channel follows `main`; **beta** follows the beta branch. You can
+switch from the installer, the Update app, or Settings. Most people should stay
+on stable.
 
-Controls: left-click focuses, drag the title bar to move, `X` closes, `F1` toggles Start, `Delete` closes the focused window.
+## Accounts and login
 
-## Accounts & security
+- Add or remove users in the **Users** app. The last remaining account cannot be
+  removed.
+- Passwords are stored as salted hashes, never as plaintext.
+- Five wrong attempts shut the computer down. Repeated failures across reboots
+  add a 30-second wait.
+- Hold `R` during the splash to reinstall the OS while keeping your accounts.
+  Recovery does not give you a shell.
 
-Passwords are stored salted and hashed (SHA-256 × 100 rounds) in `macaroon/users.dat` — never plaintext. With accounts present, every boot stops at a Windows-style login screen: click a user tile (or ↑/↓), type the masked password, Enter. Five misses shuts the machine down, `Shutdown` sits bottom-right, and a Welcome spinner hands off to the desktop. No accounts = boots straight in. `Ctrl+T` is swallowed at every layer (splash, login, desktop), and Start → Lock returns to login.
-
-Hardening notes: updates only run over HTTPS and validate every manifest path (no traversal, no data-file overwrites, 256KB cap); a present-but-unreadable accounts file shuts down instead of booting open; repeated failures across reboots earn a 30s lockout; the Terminal restores any globals a command tampers with; hold `R` during the splash for recovery (reinstall-only, accounts kept — deliberately no shell, so it can't be used to delete the accounts file).
-
-Honest limits: anyone who can open the computer's files (world save, CraftOS-PC data folder) can delete the gate — like every ComputerCraft OS, this stops walk-ups, not owners.
+Like any ComputerCraft OS, this protects against someone at the keyboard. It
+can't protect against someone who can open the world save or the CraftOS-PC
+data folder and delete the login gate.
 
 ## Uninstall
 
-Open the Terminal app (Ctrl+T is swallowed, so there is no exit-to-shell shortcut) and delete the OS files:
+Open the **Terminal** app and run:
 
 ```
 rm startup.lua
 rm macaroon
 ```
 
-Reboot to land back in plain CraftOS. Your pre-install backup is in `startup.bak`.
+Then reboot. You'll be back in plain CraftOS. Your pre-install `startup.lua`
+backup is in `startup.bak`.
 
-## Development
+This removes your Macaroon OS accounts and settings too. Back them up first if
+you might want them later.
 
-Repo layout (this is also the on-computer layout — repo root == computer root):
+## Troubleshooting
 
-```
-startup.lua          auto-boot: splash → update check → login → desktop
-installer.lua        one-command installer + admin account creation
-update.lua           `update` shell command
-macaroon/
-  boot.lua           splash screen + spinner
-  desktop.lua        event loop, windows, taskbar, Start menu
-  window.lua         window manager (drag, focus, close)
-  login.lua          login gate
-  users.lua          accounts (salted SHA-256 x100)
-  sha256.lua         pure-Lua SHA-256 (no bit ops needed)
-  settings.lua       wallpaper / clock / auto-update store
-  updater.lua        version check + manifest-driven downloads
-  manifest.lua       the file list installers and updaters use
-  version.lua        bump per release (releases are detected from this)
-  apps/              one file per Start-menu app
-```
+**The install command does nothing.**
+Check that you're on an Advanced Computer and that the HTTP API is enabled in
+ComputerCraft. If `wget` still fails, upload `installer.lua` to pastebin and use
+`pastebin run <code>`.
 
-**Adding an app:** create `macaroon/apps/myapp.lua` returning `{ title, width, height, draw(win), onEvent }`, register `{ name = "My App", path = "macaroon/apps/myapp.lua" }` in `startup.lua`, and add the path to `manifest.lua` + `installer.lua`'s `FILES` (keep the two lists identical).
+**It boots to an error screen.**
+The crash screen shows the error and reboots. If it keeps happening, reinstall
+with the command above; your accounts are kept.
 
-App contract:
+**An update doesn't appear.**
+Updates need HTTP access. If you're offline, the check is skipped. Try
+Start → Update → `[ Check ]` when you're back online.
 
-```lua
-return {
-  title = "My App", width = 30, height = 8,
-  draw = function(win)        -- use ONLY win.*, title bar excluded
-    win.setCursorPos(2, 2)
-    win.write("Hi!")
-  end,
-  onEvent = function(win, event, p1, cx, cy)
-    -- mouse coords are window-content-local; key/char for focused window
-    return true               -- true = request redraw
-  end
-}
-```
+**I forgot my password.**
+There is no password reset from the login screen, and recovery keeps your
+accounts. If you have a backup of `macaroon/users.dat`, restore it with file
+access; otherwise the machine needs to be reset from outside the OS.
 
-Rules that keep it working on real hardware: Lua 5.1 subset (no `goto`, `//`, or bitwise ops), colours only via `colours.*` names, wrap every `http.get` in `pcall`, and never throw out of `draw`/`onEvent`.
+**How do I get back to CraftOS?**
+See **Uninstall** above.
 
-**Releasing:** bump `version.lua`, push to `main` — computers pick it up on next check. Test with `luac -p` on every Lua file before pushing.
+## For developers
+
+Source layout, the app contract, Lua 5.1 rules, and the release checklist are
+in the project docs:
+
+- `AGENTS.md` — workflow, commands, git rules
+- `SPEC.md` — as-built behaviour
+- `THREAT_MODEL.md` — security model
+- `macaroon/AGENTS.md` — code and app rules
+- `tests/AGENTS.md` — test suite
+- `MILESTONES.md` — milestone history
+- `STATE.md` — current version and branch
