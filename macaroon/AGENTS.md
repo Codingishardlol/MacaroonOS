@@ -83,35 +83,26 @@ Rules:
 ## Code vs data
 
 The manifest has **24 code paths** as of v1.7.8. `installer.lua` duplicates the
-same list as bootstrap. Never add data files to either list:
-
-```
-users.dat
-settings.dat
-update_url.txt
-.provisioned
-fails.dat
-```
+same list as bootstrap. Never add data files to either list; the canonical list
+of protected data files is in `THREAT_MODEL.md` § Updates.
 
 `macaroon/manifest.lua` is the updater's source of truth. Any change to the
 code list must be made in both files in the same commit.
 
 ## Security-sensitive code
 
-Read `THREAT_MODEL.md` before changing any of these.
+Do not keep a second copy of the invariants here. Before editing one of these
+files, read the matching section of `THREAT_MODEL.md`:
 
-- **`login.lua`** — `Ctrl+T` must not escape to a shell; attempts capped;
-  password buffer capped at 64; no `os.shutdown()` inside (caller decides).
-- **`users.lua`** — never `load()`/`dofile()` `users.dat`; clamp rounds
-  (1–1000) and file size (16KB); marker `.provisioned` written on create.
-- **`apps/notepad.lua`** — one `isProtected` gate in front of open and save;
-  canonicalize paths first; block `startup.lua`, `macaroon/**`, absolute paths,
-  backslashes, and `..` escapes.
-- **`apps/terminal.lua`** — restore globals a command tampers with.
-- **`updater.lua` / `manifest.lua`** — HTTPS only, path allowlist, 256KB cap,
-  staged install, data files never listed.
-- **`startup.lua`** — every fail/tamper branch ends in `os.shutdown()`, never a
-  shell or open desktop.
+| File(s) | Read first |
+| --- | --- |
+| `login.lua`, `users.lua` | Login, Accounts, Brute-forcer |
+| `apps/notepad.lua`, `apps/terminal.lua` | Notepad, Terminal |
+| `updater.lua`, `manifest.lua`, `channel.lua`, `installer.lua` | Updates |
+| `startup.lua`, `shellboot.lua`, `boot.lua`, `crash.lua` | Boot |
+| `desktop.lua`, `window.lua` | Boot, Review checklist |
+
+If this file and `THREAT_MODEL.md` disagree, `THREAT_MODEL.md` wins.
 
 ## UI conventions
 

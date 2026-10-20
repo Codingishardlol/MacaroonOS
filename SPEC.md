@@ -2,6 +2,8 @@
 
 A Windows-style desktop OS for ComputerCraft: Tweaked.
 
+As-built behavior only. Milestones and release history live in `MILESTONES.md`.
+
 - **Target:** Advanced Computer (colour + mouse), HTTP API enabled.
 - **Layout:** repo root == computer root (`/`). `startup.lua` is the boot entry point.
 - **Runtime:** CraftOS / CC:Tweaked, Lua 5.1 subset. No `goto`, no `//`, no
@@ -194,10 +196,5 @@ The behavioral suite is `tests/test.sh` (see `tests/AGENTS.md`).
 | T12 | No channel file means stable |
 | T13 | Notepad registered locally; manifest == installer `FILES` |
 | T14 | Notepad edits/saves user files, refuses OS files through canonicalized paths, multi-line open, F-keys, close veto |
-| T15 | Channel switch installs/removes Notepad registration (post-push beta) |
+| T15 | Channel switch restores Notepad registration; current stable keeps it (post-push beta) |
 | T16 | Switch with no channel lib (≤1.7.4 update path) succeeds and heals it |
-
-## History
-
-Milestone and release history lives in `MILESTONES.md`; the as-built behavior
-above is the source of truth for the current version.

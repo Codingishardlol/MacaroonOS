@@ -37,10 +37,16 @@ edited file is not completion.
 A task is done only when:
 
 - the behavior is implemented
-- relevant tests pass, or the report says exactly which could not run and why
+- every behavior the harness can exercise has a passing test
+- the report separates **Verified by** from **Not verified**, and explains why
+  anything could not be exercised
 - docs/`STATE.md` are updated when behavior or state changed
 - the change is committed (unless the user said not to commit)
 - the final message states what changed and how it was verified
+
+If a required behavior cannot be exercised by the harness, the task can still
+be complete, but the report must say `implemented; verified by X` and
+`not verified: Y`, and must not claim full verification.
 
 ### Keep going
 
@@ -76,8 +82,9 @@ Otherwise: decide, state your assumption, and proceed.
 
 ### Never
 
-- ask the user to run a test you can run
-- claim done without verification
+- ask the user to run a test the harness can run (for behavior it genuinely
+  cannot exercise, report **Not verified** and name the smallest manual check)
+- claim a behavior is verified when the harness did not verify it
 - silently narrow the scope
 - end with "I can…", "let me know", or "say the word"
 - rewrite unrelated code just to make a test pass
@@ -90,7 +97,9 @@ Otherwise: decide, state your assumption, and proceed.
 - Before editing, say which files you expect to touch.
 - If a change breaks things and you can't fix it, revert it rather than leaving
   the tree broken.
-- The user is not the test runner. Run the tests yourself.
+- The user is not the test runner for anything the harness can run. Run those
+  tests yourself. For behavior the harness genuinely cannot exercise, report
+  it as **Not verified** rather than pretending it passed.
 
 ## Task tracking and context
 
@@ -106,49 +115,33 @@ Otherwise: decide, state your assumption, and proceed.
 
 ## Commands
 
-Run from the repo root.
+Run from the repo root:
 
 ```bash
-bash tests/test.sh          # full suite (~10 min)
+bash tests/test.sh          # full suite
+SERIAL=1 bash tests/test.sh # same tests, one at a time
 bash tests/test.sh quick    # syntax + login smoke + changed-file tests
 bash tests/test.sh T14      # one test
 ```
 
-Boot in the emulator (GUI):
-
-```bash
-DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
-cp startup.lua "$DATA_DIR/computer/0/"
-cp -r macaroon "$DATA_DIR/computer/0/"
-craftos --directory "$DATA_DIR"
-rm -rf "$DATA_DIR"
-```
-
-Headless boot smoke (the desktop loop never exits, so the kill is expected):
-
-```bash
-DATA_DIR=$(mktemp -d); mkdir -p "$DATA_DIR/computer/0"
-cp startup.lua "$DATA_DIR/computer/0/"
-cp -r macaroon "$DATA_DIR/computer/0/"
-timeout -s KILL 10 craftos --directory "$DATA_DIR" --headless \
-  --exec 'print("BOOT-OK:" .. tostring(fs.exists("startup.lua")))' \
-  2>/dev/null | strings | grep BOOT-OK   # expect BOOT-OK:true
-rm -rf "$DATA_DIR"
-```
-
-Toolchain setup is in `tests/AGENTS.md`.
+Toolchain setup, manual boot, and harness helpers are in `tests/AGENTS.md`.
 
 ## Verification
 
-- **UI changes:** run CraftOS-PC under `xvfb-run`, take a screenshot, and look
-  at it before saying you're done. Screen is 51x19; use the palette in
-  `SPEC.md`. Save proofs in `screenshots/`.
-- **Security changes:** read `THREAT_MODEL.md`, add a regression test, and
-  rerun the old exploit tests.
+- Run the cheapest test that covers the change, then the full suite for
+  boot-critical changes.
+- **UI:** screenshot under `xvfb-run` and inspect it. Conventions and proof
+  location are in `macaroon/AGENTS.md`.
+- **Security:** read `THREAT_MODEL.md`, add a regression test, and rerun the
+  old exploit tests.
 - **Boot-critical files:** `startup.lua`, `macaroon/shellboot.lua`,
   `macaroon/login.lua`, `macaroon/users.lua`, `macaroon/updater.lua`,
   `macaroon/desktop.lua`, `macaroon/window.lua`, `macaroon/manifest.lua`,
-  `installer.lua`. Before pushing these to `main`: full suite + user approval.
+  `installer.lua`. Full suite + user approval before `main`.
+- **Untestable behavior:** if the harness cannot exercise it, report
+  **Verified by** and **Not verified** separately, with the smallest manual
+  check. Don't ask the user to run what the harness can run.
+  (`Verified by X; not verified: Y` is a good report.)
 
 ## Git and release
 
@@ -169,36 +162,13 @@ Toolchain setup is in `tests/AGENTS.md`.
   var. Unset `GITHUB_TOKEN` for push commands. Never print the token or write
   it into URLs/configs/files.
 
-## Architecture map
-
-- **Boot:** `startup.lua` → colour check → `shellboot.lua` → splash/recovery
-  (`boot.lua`) → login (`login.lua` + `users.lua`) → update check →
-  desktop (`desktop.lua` + `window.lua`). Fail-closed paths shut down; they
-  never fall through to a shell.
-- **Accounts:** `macaroon/users.lua` stores salted/stretched hashes in
-  `macaroon/users.dat`; `macaroon/.provisioned` marks a machine that has had
-  accounts; `macaroon/fails.dat` records persistent failures.
-- **Desktop:** `macaroon/desktop.lua` owns the event loop, windows, taskbar,
-  and Start menu; `macaroon/window.lua` handles drag/focus/close; each app is
-  `macaroon/apps/*.lua`.
-- **Updates:** `macaroon/updater.lua` reads `macaroon/manifest.lua` and
-  compares `macaroon/version.lua`. `installer.lua` duplicates the `FILES`
-  list as bootstrap; the two lists must stay identical.
-- **Channels:** `macaroon/channel.lua` stores stable/beta; stable = `main`,
-  beta = `beta`.
-- **Data files** (`users.dat`, `settings.dat`, `update_url.txt`,
-  `.provisioned`, `fails.dat`) are never in either file list, so installs and
-  updates keep accounts and settings.
-
 ## Subagents
 
-- Split a milestone into subtasks first. Independent tasks can run as parallel
-  subagents in one step.
-- Each subagent owns specific files and never edits outside them. Shared boot
-  files (`startup.lua`, `boot.lua`, `login.lua`, `users.lua`, `desktop.lua`)
-  are edited only by the main agent.
-- Good subagent jobs: exploration, running the suite and summarizing failures,
-  red-team exploits in the emulator, screenshots, separate apps, CC:Tweaked
-  API research.
-- Give each subagent a self-contained task and ask for a short summary, not a
-  full report. The main agent runs the suite and commits after they finish.
+- Split a milestone into independent subtasks. Each subagent owns specific
+  files and never edits outside them.
+- Shared boot files (`startup.lua`, `boot.lua`, `login.lua`, `users.lua`,
+  `desktop.lua`) are edited only by the main agent.
+- Good jobs: exploration, test runs/failure summaries, red-team exploits,
+  screenshots, separate apps, CC:Tweaked API research.
+- Give each a self-contained task and ask for a short summary. The main agent
+  runs the suite and commits.
