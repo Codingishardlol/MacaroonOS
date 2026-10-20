@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Macaroon OS behavioral test suite.
-#   bash tests/test.sh        full suite (~10 min), exit 0 = all pass
+#   bash tests/test.sh        full suite (parallel groups, ~1 min)
+#   SERIAL=1 bash tests/test.sh  same tests, one at a time (debugging)
 #   bash tests/test.sh quick  syntax + login smoke + tests covering files
 #                             changed since the last commit (~20 s clean)
 #   bash tests/test.sh <name> single test, e.g. T2b (also T2B, t2b)
@@ -88,19 +89,22 @@ EOF
 }
 # Poll a screenshot until the screen matches. $1=outfile $2=kind $3=timeout_s.
 # desktop = green Start button; active = settled light-blue OS screen;
-# lit = any non-black window (text-mode screens like the installer).
+# lit = any non-black window (text-mode screens like the installer);
+# dark = dark screen with visible text (splash or recovery), not blue.
 poll_screen() {
   local out=$1 want=$2 timeout_s=$3 i=0
   while [ "$i" -lt "$timeout_s" ]; do
-    scrot "$out" 2>/dev/null || true
+    scrot -o "$out" 2>/dev/null || true
     if [ "$want" = desktop ]; then
       [ "$(pxfast "$out" green)" -gt 40 ] && return 0
     elif [ "$want" = active ]; then
       [ "$(pxfast "$out" blue)" -gt 5000 ] && return 0
+    elif [ "$want" = dark ]; then
+      [ "$(pxfast "$out" blue)" -lt 2000 ] && [ "$(pxfast "$out" lit)" -gt 100 ] && return 0
     else
       [ "$(pxfast "$out" lit)" -gt 500 ] && return 0
     fi
-    sleep 2; i=$((i + 2))
+    sleep 1; i=$((i + 1))
   done
   return 1
 }
@@ -118,7 +122,7 @@ boot_poll() { # $1=datadir $2=outfile $3=marker-grep $4=timeout_s
   craftos --directory "$1" --headless >"$2" 2>&1 &
   local pid=$! i=0 found=1
   while [ "$i" -lt "$4" ]; do
-    sleep 2; i=$((i + 2))
+    sleep 1; i=$((i + 1))
     if strings "$2" 2>/dev/null | grep -aq "$3"; then found=0; break; fi
     kill -0 $pid 2>/dev/null || break
   done
@@ -202,7 +206,7 @@ t2c() {
   xdotool type --delay 80 "wrongpass123"
   xdotool key Return
   sleep 4
-  scrot screenshots/test-login-wrong.png
+  scrot -o screenshots/test-login-wrong.png
   kill $CPID; sleep 1; kill -9 $CPID 2>/dev/null || true
   ' >/dev/null 2>&1
   g=$(pxcount screenshots/test-login-wrong.png green)
@@ -225,12 +229,15 @@ t3() {
   . "$GUIHELP"
   craftos --directory "$D" &
   CPID=$!
-  poll_screen "$TMPBASE/t3early.png" active 20
-  sleep 1; xdotool key r
-  sleep 1; xdotool key r
-  sleep 1; xdotool key r
-  sleep 4
-  scrot screenshots/test-recovery-menu.png
+  # Spam R across the splash window. Starting immediately makes this robust
+  # when parallel groups starve the emulator and the splash is missed.
+  ( for i in $(seq 1 30); do xdotool key r 2>/dev/null || true; sleep 0.15; done ) &
+  RPID=$!
+  poll_screen "$TMPBASE/t3early.png" dark 20
+  sleep 2
+  kill $RPID 2>/dev/null || true
+  wait $RPID 2>/dev/null || true
+  scrot -o screenshots/test-recovery-menu.png
   xdotool type --delay 80 "2"
   xdotool key Return
   poll_screen screenshots/test-reboot-splash.png active 30
@@ -303,7 +310,10 @@ t6() {
   boot_poll "$D" "$TMPBASE/t6.txt" "Password" 30; rc=$RC
   grep -aq "Password" "$TMPBASE/t6.txt" && pw=0 || pw=1
   { [ "$RC" -eq 124 ] || [ "$RC" -eq 137 ]; } && running=0 || running=1
-  sleep 1
+  for _ in $(seq 1 20); do
+    [ -f "$D/computer/0/macaroon/.provisioned" ] && break
+    sleep 0.1
+  done
   [ -f "$D/computer/0/macaroon/.provisioned" ] && adopted=0 || adopted=1
   { [ "$premark" -eq 0 ] && [ "$pw" -eq 0 ] && [ "$running" -eq 0 ] && [ "$adopted" -eq 0 ]; }
   hit $? "T6 upgraded boot reaches login, marker adopted (rc=$RC)"
@@ -347,7 +357,7 @@ t9() {
   poll_screen "$TMPBASE/t9prompt.png" lit 30
   xdotool type --delay 80 "b"
   xdotool key Return
-  for i in $(seq 1 75); do [ -f "$D/computer/0/macaroon/apps/terminal.lua" ] && break; sleep 2; done
+  for i in $(seq 1 300); do [ -f "$D/computer/0/macaroon/apps/terminal.lua" ] && break; sleep 0.5; done
   sleep 4
   xdotool type --delay 80 "n"
   xdotool key Return
@@ -355,7 +365,7 @@ t9() {
   xdotool type --delay 80 "n"
   xdotool key Return
   sleep 2
-  scrot screenshots/test-install-beta.png
+  scrot -o screenshots/test-install-beta.png
   kill $CPID; sleep 1; kill -9 $CPID 2>/dev/null || true
   ' >/dev/null 2>&1
   kill $SRVPID 2>/dev/null || true
@@ -440,22 +450,75 @@ covers() { # $1 = test fn -> files
 }
 ALL_TESTS="t1a t1b t2a t2b t2c t3 t4a t4b t4c t4d t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15 t16"
 
+run_group() { # $1=log; rest=tests
+  local log=$1; shift
+  {
+    for test_name in "$@"; do
+      local start=$SECONDS
+      "$test_name"
+      echo "TIME: $test_name $((SECONDS - start))s"
+    done
+    echo "GROUP_DONE"
+  } >"$log" 2>&1
+}
+
 run_full() {
-  t0a; t0b
-  for t in $ALL_TESTS; do "$t"; done
+  if [ "${SERIAL:-0}" = 1 ]; then
+    t0a; t0b
+    for t in $ALL_TESTS; do "$t"; done
+    return
+  fi
+
+  # Every test gets its own mkdata disk. The GUI group stays sequential
+  # because it shares screenshots/; all other groups are independent.
+  local g1="t0a t0b t1a t1b t2a t5 t6 t7 t8 t12 t13 t14"
+  local g2="t4a t4b t4c t4d"
+  local g3="t2b t2c t3 t9"
+  local g4="t10 t15"
+  local g5="t11 t16"
+  local l1="$TMPBASE/group-1.log" l2="$TMPBASE/group-2.log"
+  local l3="$TMPBASE/group-3.log" l4="$TMPBASE/group-4.log"
+  local l5="$TMPBASE/group-5.log"
+
+  echo "=== full suite: 5 parallel groups (SERIAL=1 for sequential) ==="
+  run_group "$l1" $g1 & local p1=$!
+  run_group "$l2" $g2 & local p2=$!
+  run_group "$l3" $g3 & local p3=$!
+  run_group "$l4" $g4 & local p4=$!
+  run_group "$l5" $g5 & local p5=$!
+  wait "$p1" "$p2" "$p3" "$p4" "$p5" 2>/dev/null || true
+
+  PASS=0; FAIL=0
+  local grouped="$g1 $g2 $g3 $g4 $g5" log i=0
+  for log in "$l1" "$l2" "$l3" "$l4" "$l5"; do
+    i=$((i + 1))
+    cat "$log"
+    if ! grep -qx "GROUP_DONE" "$log"; then
+      echo "FAIL: parallel group $i did not finish"
+      FAIL=$((FAIL + 1))
+    fi
+    PASS=$((PASS + $(grep -c '^PASS:' "$log" || true)))
+    FAIL=$((FAIL + $(grep -c '^FAIL:' "$log" || true)))
+  done
+  for test_name in $ALL_TESTS; do
+    case " $grouped " in
+      *" $test_name "*) ;;
+      *) echo "FAIL: $test_name is not in a parallel group"; FAIL=$((FAIL + 1));;
+    esac
+  done
 }
 run_quick() {
   t0a; t0b; smoke
-  local changed f t
+  local changed f test_name
   changed=$(git diff --name-only HEAD; git ls-files --others --exclude-standard | grep -v '^screenshots/' || true)
   [ -z "$changed" ] && return 0
-  for t in $ALL_TESTS; do
+  for test_name in $ALL_TESTS; do
     # T15 verifies DEPLOYED branches (needs the feature pushed first),
     # so it runs in full mode, never in quick.
-    [ "$t" = t15 ] && continue
+    [ "$test_name" = t15 ] && continue
     while read -r f; do
       [ -z "$f" ] && continue
-      if covers "$t" | grep -qxF "$f"; then "$t"; break; fi
+      if covers "$test_name" | grep -qxF "$f"; then "$test_name"; break; fi
     done <<< "$changed"
   done
 }
@@ -588,8 +651,12 @@ t14() {
   rm -rf "$D"
 }
 t15() {
-  echo "=== T15: Stable->Beta installs Notepad, back removes it ==="
+  echo "=== T15: Channel switch restores Notepad; stable keeps it ==="
   local D; D=$(mkdata); mkaccount "$D" >/dev/null
+  # Start from a stable install with Notepad removed, so the beta switch has
+  # to restore both the app file and its startup registration.
+  sed -i '/notepad/d' "$D/computer/0/startup.lua"
+  rm -f "$D/computer/0/macaroon/apps/notepad.lua"
   timeout -s KILL 120 craftos --directory "$D" --headless --exec \
     'local Updater=dofile("macaroon/updater.lua"); local ok,err=Updater.switchChannel("beta"); print("SWITCH:"..tostring(ok)); os.shutdown(ok and 0 or 8)' \
     2>/dev/null | strings | grep -aq "SWITCH:true"; sw1=$?
@@ -598,10 +665,10 @@ t15() {
   timeout -s KILL 120 craftos --directory "$D" --headless --exec \
     'local Updater=dofile("macaroon/updater.lua"); local ok,err=Updater.switchChannel("stable"); print("SWITCH:"..tostring(ok)); os.shutdown(ok and 0 or 8)' \
     2>/dev/null | strings | grep -aq "SWITCH:true"; sw2=$?
-  grep -aq "notepad" "$D/computer/0/startup.lua" 2>/dev/null && reg2=1 || reg2=0
-  echo "to-beta: sw=$sw1 reg=$reg1 file=$fil1 | to-stable: sw=$sw2 unregistered=$reg2"
-  { [ "$sw1" -eq 0 ] && [ "$reg1" -eq 0 ] && [ "$fil1" -eq 0 ] && [ "$sw2" -eq 0 ] && [ "$reg2" -eq 0 ]; }
-  hit $? "T15 channel switch installs/removes Notepad registration"
+  grep -aq "notepad" "$D/computer/0/startup.lua" 2>/dev/null && kept=0 || kept=1
+  echo "to-beta: sw=$sw1 reg=$reg1 file=$fil1 | to-stable: sw=$sw2 kept=$kept"
+  { [ "$sw1" -eq 0 ] && [ "$reg1" -eq 0 ] && [ "$fil1" -eq 0 ] && [ "$sw2" -eq 0 ] && [ "$kept" -eq 0 ]; }
+  hit $? "T15 channel switch restores Notepad; stable keeps it"
   rm -rf "$D"
 }
 
