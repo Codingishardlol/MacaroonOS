@@ -16,19 +16,52 @@ local msg = ""
 local VIEW_ROWS = 11 -- text rows between header and status
 
 local function cleanPath(p)
-  return string.gsub(tostring(p or ""), "^%s*(.-)%s*$", "%1")
+  return (string.gsub(tostring(p or ""), "^%s*(.-)%s*$", "%1"))
+end
+
+-- Canonicalise a user path before any check or fs call. This closes the
+-- obvious bypasses: "./startup.lua", "macaroon//users.dat", "a/../macaroon",
+-- and absolute paths. Returns nil for anything that escapes the root.
+local function normalizePath(p)
+  p = cleanPath(p)
+  if p == "" then return nil end
+  local first = string.sub(p, 1, 1)
+  if first == "/" or first == "\\" then return nil end
+  -- Backslashes are not path separators in CraftOS; reject them rather
+  -- than risk a host filesystem treating them as one.
+  if string.find(p, "\\", 1, true) then return nil end
+  local parts = {}
+  local start = 1
+  while true do
+    local slash = string.find(p, "/", start, true)
+    local part
+    if slash then
+      part = string.sub(p, start, slash - 1)
+      start = slash + 1
+    else
+      part = string.sub(p, start)
+    end
+    if part == ".." then
+      if #parts == 0 then return nil end
+      table.remove(parts)
+    elseif part ~= "" and part ~= "." then
+      table.insert(parts, part)
+    end
+    if not slash then break end
+  end
+  if #parts == 0 then return nil end
+  return table.concat(parts, "/")
 end
 
 -- Security gate (single choke point for open AND save): the OS's own
 -- files are never readable or writable here. Everything else (user
 -- files anywhere else, e.g. notes.txt, docs/todo.txt) is allowed.
 local function isProtected(p)
-  p = cleanPath(p)
-  if p == "" then return true end
-  if p == "startup.lua" then return true end
-  if p == "macaroon" or string.sub(p, 1, 9) == "macaroon/" then return true end
-  if string.sub(p, 1, 1) == "/" then return true end
-  if string.find(p, "%.%.") then return true end
+  local n = normalizePath(p)
+  if not n then return true end
+  n = string.lower(n)
+  if n == "startup.lua" then return true end
+  if n == "macaroon" or string.sub(n, 1, 9) == "macaroon/" then return true end
   return false
 end
 
@@ -105,8 +138,8 @@ local function moveCursor(dx, dy)
 end
 
 local function loadPath(path)
-  path = cleanPath(path)
-  if isProtected(path) then
+  path = normalizePath(path)
+  if not path or isProtected(path) then
     msg = "Protected file."
     return false
   end
@@ -130,10 +163,12 @@ local function loadPath(path)
   while true do
     local nl = string.find(data, "\n", start, true)
     if not nl then
-      table.insert(lines, string.gsub(string.sub(data, start), "\r$", ""))
+      local last = string.gsub(string.sub(data, start), "\r$", "")
+      table.insert(lines, last)
       break
     end
-    table.insert(lines, string.gsub(string.sub(data, start, nl - 1), "\r$", ""))
+    local line = string.gsub(string.sub(data, start, nl - 1), "\r$", "")
+    table.insert(lines, line)
     start = nl + 1
   end
   if #lines < 1 then lines = { "" } end
@@ -153,10 +188,12 @@ local function saveNow()
     msg = ""
     return false
   end
-  if isProtected(fname) then
+  local path = normalizePath(fname)
+  if not path or isProtected(path) then
     msg = "Protected file."
     return false
   end
+  fname = path
   local dir = fs.getDir(fname)
   if dir ~= "" and not fs.exists(dir) then
     local okM = pcall(fs.makeDir, dir)
@@ -199,10 +236,10 @@ local function doNew()
 end
 
 local function submitPrompt()
-  local path = cleanPath(prompt)
+  local path = normalizePath(prompt)
   mode = "edit"
   prompt = ""
-  if path == "" then
+  if not path then
     msg = "Cancelled."
     return
   end
@@ -214,10 +251,10 @@ local function submitPrompt()
 end
 
 local function submitSaveAs()
-  local path = cleanPath(prompt)
+  local path = normalizePath(prompt)
   mode = "edit"
   prompt = ""
-  if path == "" then
+  if not path then
     msg = "Cancelled."
     return
   end
@@ -303,7 +340,7 @@ return {
       if #m > w - 3 then m = string.sub(m, 1, w - 3) end
       win.write(m)
     else
-      win.write("[N]ew [O]pen [S]ave [A]s")
+      win.write("F4 New  F3 Open  F2 Save  F5 As")
     end
   end,
 
@@ -335,6 +372,10 @@ return {
     elseif event == "key" then
       if p1 == 14 then backspace()
       elseif p1 == 28 then splitLine()
+      elseif p1 == 60 then saveNow()                 -- F2
+      elseif p1 == 61 then mode = "open" prompt = "" msg = ""  -- F3
+      elseif p1 == 62 then doNew()                   -- F4
+      elseif p1 == 63 then mode = "saveas" prompt = "" msg = "" -- F5
       elseif p1 == 200 then moveCursor(0, -1)
       elseif p1 == 208 then moveCursor(0, 1)
       elseif p1 == 203 then moveCursor(-1, 0)

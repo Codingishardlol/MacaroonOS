@@ -480,8 +480,9 @@ t13() {
   hit $? "T13 Notepad registered, manifest==installer FILES"
 }
 t14() {
-  echo "=== T14: Notepad edits/saves normal files, refuses OS files ==="
+  echo "=== T14: Notepad edits/saves user files, refuses OS paths, veto + F-keys work ==="
   local D; D=$(mkdata)
+  printf 'line one\nline two\n' > "$D/computer/0/multi.txt"
   H0=$(sha256sum "$D/computer/0/startup.lua" | cut -d" " -f1)
   timeout -s KILL 30 craftos --directory "$D" --headless --exec \
     'local function mockWin() local m = { buf = {} }; function m.setCursorPos(x, y) m.cx, m.cy = x, y end; function m.write(s) local y = m.cy or 1; m.buf[y] = (m.buf[y] or "") .. tostring(s) end; function m.clear() m.buf = {} end; function m.setBackgroundColor(c) end; function m.setTextColor(c) end; function m.getSize() return 44, 13 end; return m end
@@ -507,6 +508,60 @@ t14() {
     App.onEvent(win, "key", 28)
     print("SAVEREFUSED:"..tostring(not fs.exists("macaroon/evil.lua")))
     print("CLEANVETO:"..tostring((function() local A2 = dofile("macaroon/apps/notepad.lua"); return A2.canClose() end)()))
+
+    local Open = dofile("macaroon/apps/notepad.lua")
+    local ow = mockWin()
+    Open.onEvent(ow, "mouse_click", 1, 15, 13)
+    for c in ("./multi.txt"):gmatch(".") do Open.onEvent(ow, "char", c) end
+    Open.onEvent(ow, "key", 28)
+    local oh = mockWin(); Open.draw(oh)
+    local ohs = table.concat(oh.buf, "|")
+    print("MULTIOPEN:"..tostring(string.find(ohs, "multi.txt", 1, true) ~= nil and string.find(ohs, "line one", 1, true) ~= nil))
+
+    local Evil = dofile("macaroon/apps/notepad.lua")
+    local ew = mockWin()
+    Evil.onEvent(ew, "char", "H")
+    Evil.onEvent(ew, "mouse_click", 1, 40, 13)
+    for c in ("./macaroon/evil.lua"):gmatch(".") do Evil.onEvent(ew, "char", c) end
+    Evil.onEvent(ew, "key", 28)
+    print("EVILBLOCK:"..tostring(not fs.exists("macaroon/evil.lua")))
+
+    local Case = dofile("macaroon/apps/notepad.lua")
+    local cw = mockWin()
+    Case.onEvent(cw, "char", "H")
+    Case.onEvent(cw, "mouse_click", 1, 40, 13)
+    for c in ("MACAROON/evil.lua"):gmatch(".") do Case.onEvent(cw, "char", c) end
+    Case.onEvent(cw, "key", 28)
+    print("CASEBLOCK:"..tostring(not fs.exists("MACAROON/evil.lua")))
+
+    local Start = dofile("macaroon/apps/notepad.lua")
+    local sw = mockWin()
+    Start.onEvent(sw, "char", "H")
+    Start.onEvent(sw, "mouse_click", 1, 40, 13)
+    for c in ("./startup.lua"):gmatch(".") do Start.onEvent(sw, "char", c) end
+    Start.onEvent(sw, "key", 28)
+    local sh = mockWin(); Start.draw(sh)
+    print("STARTPROT:"..tostring(string.find(table.concat(sh.buf, "|"), "untitled", 1, true) ~= nil))
+
+    local Keys = dofile("macaroon/apps/notepad.lua")
+    local kw = mockWin()
+    Keys.onEvent(kw, "char", "h"); Keys.onEvent(kw, "char", "i")
+    Keys.onEvent(kw, "key", 60)
+    for c in ("fkey.txt"):gmatch(".") do Keys.onEvent(kw, "char", c) end
+    Keys.onEvent(kw, "key", 28)
+    print("F2SAVE:"..tostring(fs.exists("fkey.txt")))
+    Keys.onEvent(kw, "key", 62)
+    Keys.onEvent(kw, "char", "y"); Keys.onEvent(kw, "char", "o")
+    Keys.onEvent(kw, "key", 63)
+    for c in ("fkey2.txt"):gmatch(".") do Keys.onEvent(kw, "char", c) end
+    Keys.onEvent(kw, "key", 28)
+    print("F5SAVE:"..tostring(fs.exists("fkey2.txt")))
+    Keys.onEvent(kw, "key", 61)
+    for c in ("fkey.txt"):gmatch(".") do Keys.onEvent(kw, "char", c) end
+    Keys.onEvent(kw, "key", 28)
+    local kh = mockWin(); Keys.draw(kh)
+    print("F3OPEN:"..tostring(string.find(table.concat(kh.buf, "|"), "fkey.txt", 1, true) ~= nil))
+
     os.shutdown(0)' \
     >"$TMPBASE/t14.txt" 2>&1
   s=$(strings "$TMPBASE/t14.txt")
@@ -517,12 +572,19 @@ t14() {
   echo "$s" | grep -aq "SAVEREFUSED:true" && e=0 || e=1
   echo "$s" | grep -aq "STILLNOTES:true" && oo=0 || oo=1
   echo "$s" | grep -aq "CLEANVETO:true" && f=0 || f=1
+  echo "$s" | grep -aq "MULTIOPEN:true" && multi=0 || multi=1
+  echo "$s" | grep -aq "EVILBLOCK:true" && evil=0 || evil=1
+  echo "$s" | grep -aq "CASEBLOCK:true" && caseblk=0 || caseblk=1
+  echo "$s" | grep -aq "STARTPROT:true" && startprot=0 || startprot=1
+  echo "$s" | grep -aq "F2SAVE:true" && f2=0 || f2=1
+  echo "$s" | grep -aq "F5SAVE:true" && f5=0 || f5=1
+  echo "$s" | grep -aq "F3OPEN:true" && f3=0 || f3=1
   [ "$(cat "$D/computer/0/notes.txt" 2>/dev/null)" = "hi" ] && content=0 || content=1
   H1=$(sha256sum "$D/computer/0/startup.lua" | cut -d" " -f1)
   [ "$H0" = "$H1" ] && intact=0 || intact=1
-  echo "hdr=$a saved=$b veto=$c/$d openref=$oo saveref=$e clean=$f content=$content intact=$intact"
-  { [ "$a" -eq 0 ] && [ "$b" -eq 0 ] && [ "$c" -eq 0 ] && [ "$d" -eq 0 ] && [ "$oo" -eq 0 ] && [ "$e" -eq 0 ] && [ "$f" -eq 0 ] && [ "$content" -eq 0 ] && [ "$intact" -eq 0 ]; }
-  hit $? "T14 edit/save works, OS files refused, veto works"
+  echo "hdr=$a saved=$b veto=$c/$d openref=$oo saveref=$e clean=$f multi=$multi evil=$evil case=$caseblk start=$startprot f2=$f2 f5=$f5 f3=$f3 content=$content intact=$intact"
+  { [ "$a" -eq 0 ] && [ "$b" -eq 0 ] && [ "$c" -eq 0 ] && [ "$d" -eq 0 ] && [ "$oo" -eq 0 ] && [ "$e" -eq 0 ] && [ "$f" -eq 0 ] && [ "$multi" -eq 0 ] && [ "$evil" -eq 0 ] && [ "$caseblk" -eq 0 ] && [ "$startprot" -eq 0 ] && [ "$f2" -eq 0 ] && [ "$f5" -eq 0 ] && [ "$f3" -eq 0 ] && [ "$content" -eq 0 ] && [ "$intact" -eq 0 ]; }
+  hit $? "T14 Notepad paths, veto, multi-line open, F-keys"
   rm -rf "$D"
 }
 t15() {
