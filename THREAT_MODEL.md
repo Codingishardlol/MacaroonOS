@@ -137,7 +137,7 @@ the full suite.
 | T3 | Recovery has no shell; reboot preserves `users.dat` |
 | T4a–d | Missing `desktop.lua`, `window.lua`, `login.lua`, or `users.dat` fails closed |
 | T14 | Notepad edits/saves user files, refuses OS files through canonicalized paths, multi-line open, F-keys, close veto |
-| T15/T16 | Channel switching installs/removes Notepad and heals a missing channel lib |
+| T15/T16 | Channel switching restores Notepad and heals a missing channel lib |
 
 ## Review checklist
 

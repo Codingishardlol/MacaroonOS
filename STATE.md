@@ -9,13 +9,15 @@ Updated: 2026-10-20
 | Version | `1.7.8` |
 | Stable channel | `main` |
 | Beta channel | `beta` |
-| Release status | `1.7.8` promoted from `beta` to `main` |
-| Last full suite | 24 passed, 0 failed on `beta` |
+| Release status | `1.7.8` live on both channels |
+| Last full suite | 24 passed, 0 failed on `beta` (parallel groups, 50s) |
 
 ## Working tree
 
-- Clean. Code and docs are committed.
-- `version.lua` and the README badge both say `1.7.8`.
+- Clean after the test-harness and docs commits.
+- Full suite runs in parallel by default; use `SERIAL=1` for one at a time.
+- The latest commits are test/docs only; installed code is unchanged, so the
+  version did not change.
 
 ## Next
 
