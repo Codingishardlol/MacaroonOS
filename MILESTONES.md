@@ -12,6 +12,6 @@ release history is in `git log`.
 | M5 — installer and manifest updater | done | T5–T7, T9–T12, T16 |
 | M6 — fail-closed boot | done | T4a–d |
 | M7 — release channels (stable/beta) | done | T8–T12, T15, T16 |
-| M8 — Notepad | done on `beta` | T13–T15 |
+| M8 — Notepad | done | T13–T15 |
 
-M8 is on `beta` (1.7.8) and not yet on `main` (1.7.6).
+M8 shipped in 1.7.8.
